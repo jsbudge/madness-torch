@@ -2,11 +2,12 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from pandas import DataFrame
+from scipy.optimize import minimize, basinhopping
 from tqdm import tqdm
 from sklearn.linear_model import Ridge
 
 
-def prepFrame(df: DataFrame) -> DataFrame:
+def prepFrame(df: DataFrame, full_frame: bool = True) -> DataFrame:
     df = df.rename(columns={'WLoc': 'gloc'})
     df['gloc'] = df['gloc'].map({'A': -1, 'N': 0, 'H': 1})
 
@@ -23,9 +24,10 @@ def prepFrame(df: DataFrame) -> DataFrame:
     fdf = tdf.merge(odf, left_index=True, right_index=True).merge(iddf, left_index=True, right_index=True)
 
     # then the losers get to do it
-    tdf = ldf.rename(columns=dict([(c, f't_{c[1:].lower()}') for c in ldf.columns]))
-    odf = wdf.rename(columns=dict([(c, f'o_{c[1:].lower()}') for c in wdf.columns]))
-    fdf = pd.concat([fdf, tdf.merge(odf, left_index=True, right_index=True).merge(iddf, left_index=True, right_index=True)])
+    if full_frame:
+        tdf = ldf.rename(columns=dict([(c, f't_{c[1:].lower()}') for c in ldf.columns]))
+        odf = wdf.rename(columns=dict([(c, f'o_{c[1:].lower()}') for c in wdf.columns]))
+        fdf = pd.concat([fdf, tdf.merge(odf, left_index=True, right_index=True).merge(iddf, left_index=True, right_index=True)])
 
     # Final clean up of column names and ID setting
     fdf = fdf.rename(columns={'t_teamid': 'tid', 'o_teamid': 'oid'})
@@ -62,7 +64,7 @@ def addAdvStatstoFrame(df: DataFrame, add_to_frame: bool = False) -> DataFrame:
     out_df['t_rmar'] = (df['t_or'] + df['t_dr']) - (df['o_or'] + df['o_dr'])
     out_df['t_tomar'] = df['t_to'] - df['o_to']
     out_df['t_a/to'] = df['t_ast'] - df['t_to']
-    out_df['t_blk%'] = df['t_blk'] / (df['o_fga'] - df['o_fta'] / 1.4)
+    out_df['t_blkperp'] = df['t_blk'] / out_df['t_poss']
     out_df['t_domf'] = (df['t_or'] - df['o_or']) * 1.2 + (df['t_dr'] - df['o_dr']) * 1.07 + \
                        (df['o_to'] - df['t_to']) * 1.5
     out_df['t_score%'] = (df['t_fgm'] + df['t_fgm3'] * .5 + df['t_ftm'] * .3 + df['t_pf'] * .5) / (
@@ -94,7 +96,7 @@ def addAdvStatstoFrame(df: DataFrame, add_to_frame: bool = False) -> DataFrame:
     out_df['o_rmar'] = (df['o_or'] + df['o_dr']) - (df['t_or'] + df['t_dr'])
     out_df['o_tomar'] = df['o_to'] - df['t_to']
     out_df['o_a/to'] = df['o_ast'] - df['o_to']
-    out_df['o_blk%'] = df['o_blk'] / (df['t_fga'] - df['t_fta'] / 1.4)
+    out_df['o_blkperp'] = df['o_blk'] / out_df['o_poss']
     out_df['o_domf'] = (df['o_or'] - df['t_or']) * 1.2 + (df['o_dr'] - df['t_dr']) * 1.07 + \
                        (df['t_to'] - df['o_to']) * 1.5
     out_df['o_score%'] = (df['o_fgm'] + df['o_fgm3'] * .5 + df['o_ftm'] * .3 + df['o_pf'] * .5) / (
@@ -161,13 +163,13 @@ if __name__ == '__main__':
     # Formulated so that a higher resiliency score means you have less variance than the average team
     avdf[[f'{c}_res' for c in stddf.columns]] = stddf - adf.groupby(['season', 'tid']).std().groupby(['season']).mean()
 
+    avdf_norm = (avdf - avdf.groupby(['season']).mean()) / avdf.groupby(['season']).std()
     # Add new stats based on specific areas of the game
     # PASSING
     # stats that affect passing - ast, ast%, a/to, to, to%, econ
     # We'll connect them here to normalized resiliency
-    norm_ast_res = (avdf[['t_ast%_res']] - avdf[['t_ast%_res']].groupby(['season']).mean()) / avdf[['t_ast%_res']].groupby(['season']).std()
     ridge = Ridge()
-    ridge.fit(avdf[['t_ast%', 't_a/to', 't_to%', 't_econ']], norm_ast_res)
+    ridge.fit(avdf[['t_ast%', 't_a/to', 't_to%', 't_econ']], avdf_norm['t_ast%_res'])
     passer_rating = ridge.predict(adf[['t_ast%', 't_a/to', 't_to%', 't_econ']])
     avdf['t_passrtg'] = pd.DataFrame(index=adf.index, columns=['t_passrtg'],
                                      data=ridge.predict(adf[['t_ast%', 't_a/to', 't_to%', 't_econ']])).groupby(
@@ -178,6 +180,126 @@ if __name__ == '__main__':
 
     # RIM PROTECTION
     # stats that affect this - blk%, 3/two%_inf, fg2%_inf
+    # I'm going to regress this against normalized opponent fg2%
+    ridge = Ridge()
+    ridge.fit(avdf[['t_blkperp', 'o_3two%', 'o_fg2%']], avdf_norm['t_fg2%_inf'])
+    avdf['t_rimprot'] = pd.DataFrame(index=adf.index, columns=['t_rimprot'],
+                                     data=ridge.predict(adf[['t_blkperp', 'o_3two%', 'o_fg2%']])).groupby(
+        ['season', 'tid']).mean()
+    avdf['o_rimprot'] = pd.DataFrame(index=adf.index, columns=['o_rimprot'],
+                                     data=ridge.predict(adf[['o_blkperp', 't_3two%', 't_fg2%']].values)).groupby(
+        ['season', 'tid']).mean()
+
+    # PERIMETER DEFENSE
+    # stats that affect this - 3/two%_inf, fg3%_inf, ast%_inf, to%_inf
+    ridge = Ridge()
+    ridge.fit(avdf[['o_ast%', 'o_3two%', 'o_fg3%', 'o_to%']], avdf_norm['t_fg3%_inf'])
+    avdf['t_perimdef'] = pd.DataFrame(index=adf.index, columns=['t_perimdef'],
+                                     data=ridge.predict(adf[['o_ast%', 'o_3two%', 'o_fg3%', 'o_to%']])).groupby(
+        ['season', 'tid']).mean()
+    avdf['o_perimdef'] = pd.DataFrame(index=adf.index, columns=['o_perimdef'],
+                                     data=ridge.predict(adf[['t_ast%', 't_3two%', 't_fg3%', 't_to%']].values)).groupby(
+        ['season', 'tid']).mean()
+
+    # Run elo ratings
+    m_cond_data_fnme = Path("C:\\Users\\Jeff\\PycharmProjects\\mmadness\\data\\MRegularSeasonCompactResults.csv")
+    mcdf = pd.read_csv(m_cond_data_fnme)
+    mcdf = mcdf.loc[mcdf['Season'] > 2001]
+
+    # Don't duplicate for the losers because we want to play each game once
+    scdf = prepFrame(mcdf, False)
+    tids = list(set(scdf.index.get_level_values(2)))
+
+    # curr_elo = np.ones(max(tids) + 1) * 1500
+    scdf = scdf.sort_values(by=['season', 'daynum'])
+    scdf['mov'] = scdf['t_score'] - scdf['o_score']
+    scdf['t_elo'] = 1500.
+    scdf['o_elo'] = 1500.
+
+    def runElo(x):
+        scarray = scdf.reset_index().values
+        curr_elo = np.ones(max(tids) + 1) * 1500
+        curr_seas = 2002
+        mu_reg = x[0]
+        margin = x[1]
+        k = x[2]
+        for n in range(scarray.shape[0]):
+            if curr_seas != scarray[n, 1]:
+                # Regress everything to the mean
+                for val in curr_elo:
+                    val += ((1 - mu_reg) * val + mu_reg * 1500 - val)
+            curr_seas = scarray[n, 1]
+            t_elo = curr_elo[int(scarray[n, 2])]
+            o_elo = curr_elo[int(scarray[n, 3])]
+            scarray[n, -2:] = [t_elo, o_elo]
+            hc_adv = x[3] * scarray[n, 7]
+            elo_diff = max(t_elo + hc_adv - o_elo, -400)
+            elo_shift = 1. / (10. ** (-elo_diff / 400.) + 1.)
+            exp_margin = margin + 0.006 * elo_diff
+            final_elo_update = k * ((abs(scarray[n, 9]) + 3.) ** 0.8) / exp_margin * (1 - elo_shift) * np.sign(scarray[n, 9])
+            curr_elo[int(scarray[n, 2])] += final_elo_update
+            curr_elo[int(scarray[n, 3])] -= final_elo_update
+        return scarray
+
+    def optElo(x):
+        sc_x = runElo(x)
+        return 1 - np.logical_and((sc_x[:, 10] - sc_x[:, 11] > 0), sc_x[:, 9] > 0).sum() / sc_x.shape[0]
+
+    opt_res = basinhopping(optElo, np.array([0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217]),
+                           minimizer_kwargs=dict(bounds=[(0.1, 10.), (0.1, 100.), (.1, 100), (-10., 10.)]))
+    # Add them to the adv frame (make sure the game ids are the same, though)
+    sc_out = runElo(opt_res['x'])
+    scdf = pd.DataFrame(index = scdf.index, columns=scdf.columns, data=sc_out[:, 4:])
+    joiner_df = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].merge(
+        scdf.reset_index()[['season', 'tid', 'oid', 'daynum', 't_elo', 'o_elo']],
+        on=['season', 'tid', 'oid', 'daynum'])
+    joiner_df = joiner_df.set_index(['gid', 'season', 'tid', 'oid'])
+
+    adf.loc[joiner_df.index, ['t_elo', 'o_elo']] = joiner_df[['t_elo', 'o_elo']]
+    adf.loc[np.isnan(adf['t_elo']), ['t_elo', 'o_elo']] = joiner_df[['o_elo', 't_elo']].values
+    # Run Glicko ratings
+
+    # Consolidate massey ordinals in a logical way
+    ord_fnme = Path("C:\\Users\\Jeff\\PycharmProjects\\mmadness\\data\\MMasseyOrdinals.csv")
+    ord_df = pd.read_csv(ord_fnme)
+    ord_df = ord_df.pivot_table(index=['Season', 'TeamID', 'RankingDayNum'], columns=['SystemName'])
+    ord_df.columns = ord_df.columns.droplevel(0)
+
+    ord_id = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].rename(
+        columns={'season': 'Season', 'tid': 'TeamID', 'daynum': 'RankingDayNum'})
+    ord_id = ord_id[ord_id['Season'] > 2002]
+    adf[['t_rank', 'o_rank']] = 0.
+
+    for t in tqdm(tids):
+        t_ords = ord_df.loc[:, t, :]
+        ord_id_local = ord_id.loc[np.logical_or(ord_id['TeamID'] == t, ord_id['oid'] == t)].set_index(['Season', 'RankingDayNum'])
+        check = ord_id_local.join(t_ords, how='left', lsuffix='_left', rsuffix='_right')
+        check = check.loc[check['TeamID'] == t]
+        check['t_rank'] = check.reset_index().ffill().drop(
+            columns=['Season', 'RankingDayNum', 'TeamID', 'gid', 'oid']).mean(axis=1, skipna=True).values
+        check = check.reset_index().rename(columns={'Season': 'season', 'TeamID': 'tid'}).set_index(['gid', 'season', 'tid', 'oid'])[['t_rank']]
+        check = check.fillna(400.)
+        adf.loc[check.index, 't_rank'] = check['t_rank']
+
+    ind_0 = adf.reset_index().drop_duplicates(subset=['gid'], keep='first').set_index(['gid', 'season', 'tid', 'oid']).index
+    ind_1 = adf.reset_index().drop_duplicates(subset=['gid'], keep='last').set_index(['gid', 'season', 'tid', 'oid']).index
+    adf.loc[ind_0, 'o_rank'] = adf.loc[ind_1, 't_rank'].values
+    adf.loc[ind_1, 'o_rank'] = adf.loc[ind_0, 't_rank'].values
+
+    # Save out the files so we can use them later
+    adf.to_csv('./MGameDataAdv.csv')
+    avdf.to_csv('./MAverages.csv')
+    sdf.to_csv('./MGameDataBasic.csv')
+
+
+
+
+
+
+
+
+
+
 
 
 
