@@ -1,6 +1,10 @@
 load_data:
-  data_path: ./
+  data_path: /home/jeff/repo/mmadness/data
   init_elo_params: [0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217]
   init_season: 2002
-  save_path: ./  # This should usually be the same as the data_path
+  save_path: ./data  # This should usually be the same as the data_path
   save_files: True
+  run_elo_opt: False
+
+dataloader:
+  data_file: ./data/MAverages.csv

@@ -5,6 +5,61 @@ from pandas import DataFrame
 from scipy.optimize import minimize, basinhopping
 from tqdm import tqdm
 from sklearn.linear_model import Ridge
+import yaml
+
+
+def normalize(df: DataFrame, transform = None, to_season: bool = False):
+    """
+    Normalize a frame to have a mean of zero and standard deviation of one.
+    :param transform: SKlearn transformer.
+    :param df: Frame of seasonal data.
+    :param to_season: if True, calculates norms based on season instead of overall.
+    :return: Frame of normalized seasonal data.
+    """
+    rdf = df.copy()
+    if transform is not None:
+        if to_season:
+            for idx, grp in rdf.groupby(['season']):
+                rdf.loc[grp.index] = transform.fit_transform(grp)
+        else:
+            rdf = pd.DataFrame(index=rdf.index, columns=rdf.columns, data=transform.fit_transform(rdf))
+    else:
+        if to_season:
+            mu_df = df.groupby(['season']).mean()
+            std_df = df.groupby(['season']).std()
+            for idx, grp in rdf.groupby(['season']):
+                rdf.loc[grp.index] = (grp - mu_df.loc[idx]) / std_df.loc[idx]
+        else:
+            rdf = (rdf - rdf.mean()) / rdf.std()
+    return rdf
+
+
+def getMatches(gids: DataFrame, team_feats: DataFrame, season: int = None, diff: bool = False, sort: bool = True):
+    """
+    Given a set of games, creates a frame with the chosen stats for predicting purposes.
+    :param sort:
+    :param gids: frame of games to get matches for. Only uses index. Should have index of [GameID, Season, TID, OID].
+    :param team_feats: frame of features to use for matches. Should have index of [Season, TID].
+    :param season: Season(s) for which data is wanted. If None, gets it all.
+    :param diff: if True, returns differences of features. If False, returns two frames with features.
+    :return: Returns either one frame or two, based on diff parameter, of game features.
+    """
+    if season is not None:
+        g = gids.loc(axis=0)[:, season, :, :]
+    else:
+        g = gids.copy()
+    ids = ['gid', 'season', 'tid', 'oid']
+    gsc = g.reset_index()[ids]
+    g1 = gsc.merge(team_feats, on=['season', 'tid']).set_index(ids)
+    g2 = gsc.merge(team_feats, left_on=['season', 'oid'],
+                   right_on=['season', 'tid']).set_index(ids)
+    if diff:
+        return (g1 - g2).sort_index() if sort else (g1 - g2)
+    else:
+        if sort:
+            return g1.sort_index(), g2.sort_index()
+        else:
+            return g1, g2
 
 
 def prepFrame(df: DataFrame, full_frame: bool = True) -> DataFrame:
@@ -27,7 +82,9 @@ def prepFrame(df: DataFrame, full_frame: bool = True) -> DataFrame:
     if full_frame:
         tdf = ldf.rename(columns=dict([(c, f't_{c[1:].lower()}') for c in ldf.columns]))
         odf = wdf.rename(columns=dict([(c, f'o_{c[1:].lower()}') for c in wdf.columns]))
-        fdf = pd.concat([fdf, tdf.merge(odf, left_index=True, right_index=True).merge(iddf, left_index=True, right_index=True)])
+        full_ldf = tdf.merge(odf, left_index=True, right_index=True).merge(iddf, left_index=True, right_index=True)
+        full_ldf['gloc'] = -full_ldf['gloc']
+        fdf = pd.concat([fdf, full_ldf])
 
     # Final clean up of column names and ID setting
     fdf = fdf.rename(columns={'t_teamid': 'tid', 'o_teamid': 'oid'})
@@ -129,8 +186,54 @@ def addAdvStatstoFrame(df: DataFrame, add_to_frame: bool = False) -> DataFrame:
     return df.merge(out_df, right_index=True, left_index=True) if add_to_frame else out_df
 
 
+def addSeasonalStatsToFrame(sdf: DataFrame, df: DataFrame, add_to_frame: bool = True, pyth_exp: float = 13.91):
+    """
+    Adds some end-of-season stats to a dataframe.
+    :param sdf: Frame with seasonal stats. Needs the stats listed in the function or it will error.
+    :param df: Frame with team stats, id of [season, tid]
+    :param add_to_frame: if True, adds the stats to df. Otherwise returns a new frame.
+    :param pyth_exp: Float with the pythagorean win exponential. Generally accepted to be 13.91, but can be changed if desired.
+    :return: Either df with the new columns or the new dataframe.
+    """
+    out_df = pd.DataFrame(index=df.index)
+    dfapp = sdf.groupby(['season', 'tid'])
+    out_df['t_closegame%'] = dfapp.apply(lambda x: sum(np.logical_or(abs(x['t_mov']) < 4, x['numot'] > 0)) / x.shape[0])
+    out_df['t_win%'] = dfapp.apply(lambda x: sum(x['t_mov'] > 0) / x.shape[0])
+    out_df['t_pythwin%'] = dfapp.apply(
+        lambda grp: sum(grp['t_score'] ** pyth_exp) / sum(grp['t_score'] ** pyth_exp + grp['o_score'] ** pyth_exp))
+    out_df['t_owin%'] = sdf.reset_index().merge(out_df['t_win%'].reset_index(),
+                                            left_on=['season', 'oid'],
+                                            right_on=['season', 'tid']).groupby(['season',
+                                                                                 'tid_x']).mean()['t_win%'].values
+    # Opponents' opponent win percentage calculations, for RPI
+    oo_win = sdf.reset_index().merge(out_df['t_owin%'], left_on=['season', 'oid'], right_on=['season', 'tid']).groupby(
+        ['season', 'tid']).mean()['t_owin%']
+    out_df['t_rpi'] = .25 * out_df['t_win%'] + .5 * out_df['t_owin%'] + .25 * oo_win
+    out_df['t_opythwin%'] = sdf.reset_index().merge(out_df['t_pythwin%'].reset_index(),
+                                                left_on=['season', 'oid'],
+                                                right_on=['season', 'tid']).groupby(['season',
+                                                                                     'tid_x']).mean()[
+        't_pythwin%'].values
+    # Opponents' opponent win percentage calculations, for RPI
+    oo_win = \
+        sdf.reset_index().merge(out_df['t_opythwin%'], left_on=['season', 'oid'], right_on=['season', 'tid']).groupby(
+            ['season', 'tid']).mean()['t_opythwin%']
+    out_df['t_pythrpi'] = .25 * out_df['t_pythwin%'] + .5 * out_df['t_opythwin%'] + .25 * oo_win
+    out_df['t_expwin%'] = dfapp.apply(lambda x: sum(x['t_elo'] > x['o_elo']) / x.shape[0])
+    out_df['t_luck'] = out_df['t_win%'] - out_df['t_pythwin%']
+
+    return df.merge(out_df, right_index=True, left_index=True) if add_to_frame else out_df
+
+
 if __name__ == '__main__':
-    m_season_data_fnme = Path("C:\\Users\\Jeff\\PycharmProjects\\mmadness\\data\\MRegularSeasonDetailedResults.csv")
+
+    with open('./run_params.yaml', 'r') as file:
+        try:
+            config = yaml.safe_load(file)
+        except yaml.YAMLError as exc:
+            print(exc)
+
+    m_season_data_fnme = Path(f"{config['load_data']['data_path']}/MRegularSeasonDetailedResults.csv")
     msdf = pd.read_csv(m_season_data_fnme)
 
     sdf = prepFrame(msdf)
@@ -144,6 +247,7 @@ if __name__ == '__main__':
 
     infdf = pd.DataFrame(index=sdf.index)
 
+    print('Running influence calculations...')
     for tidx, tgrp in tqdm(adf.groupby(['tid'])):
         # Use median to reduce outlier influence in calculation
         o_av = adf.loc[adf.index.get_level_values(2) != tidx].groupby(['season', 'tid']).mean()
@@ -163,7 +267,8 @@ if __name__ == '__main__':
     # Formulated so that a higher resiliency score means you have less variance than the average team
     avdf[[f'{c}_res' for c in stddf.columns]] = stddf - adf.groupby(['season', 'tid']).std().groupby(['season']).mean()
 
-    avdf_norm = (avdf - avdf.groupby(['season']).mean()) / avdf.groupby(['season']).std()
+    print('Running skill stats...')
+    avdf_norm = normalize(avdf, to_season=True)
     # Add new stats based on specific areas of the game
     # PASSING
     # stats that affect passing - ast, ast%, a/to, to, to%, econ
@@ -202,7 +307,8 @@ if __name__ == '__main__':
         ['season', 'tid']).mean()
 
     # Run elo ratings
-    m_cond_data_fnme = Path("C:\\Users\\Jeff\\PycharmProjects\\mmadness\\data\\MRegularSeasonCompactResults.csv")
+    print('Running elo ratings...')
+    m_cond_data_fnme = Path(f"{config['load_data']['data_path']}/MRegularSeasonCompactResults.csv")
     mcdf = pd.read_csv(m_cond_data_fnme)
     mcdf = mcdf.loc[mcdf['Season'] > 2001]
 
@@ -245,11 +351,17 @@ if __name__ == '__main__':
         sc_x = runElo(x)
         return 1 - np.logical_and((sc_x[:, 10] - sc_x[:, 11] > 0), sc_x[:, 9] > 0).sum() / sc_x.shape[0]
 
-    opt_res = basinhopping(optElo, np.array([0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217]),
-                           minimizer_kwargs=dict(bounds=[(0.1, 10.), (0.1, 100.), (.1, 100), (-10., 10.)]))
-    # Add them to the adv frame (make sure the game ids are the same, though)
-    sc_out = runElo(opt_res['x'])
-    scdf = pd.DataFrame(index = scdf.index, columns=scdf.columns, data=sc_out[:, 4:])
+    elo_params = np.array([0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217])
+    if config['load_data']['run_elo_opt']:
+        print('Optimizing elo...')
+        opt_res = basinhopping(optElo, elo_params,
+                               minimizer_kwargs=dict(bounds=[(0.1, 10.), (0.1, 100.), (.1, 100), (-10., 10.)]))
+        # Add them to the adv frame (make sure the game ids are the same, though)
+        sc_out = runElo(opt_res['x'])
+    else:
+        print('Not optimizing elo.')
+        sc_out = runElo(elo_params)
+    scdf = pd.DataFrame(index=scdf.index, columns=scdf.columns, data=sc_out[:, 4:])
     joiner_df = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].merge(
         scdf.reset_index()[['season', 'tid', 'oid', 'daynum', 't_elo', 'o_elo']],
         on=['season', 'tid', 'oid', 'daynum'])
@@ -260,7 +372,7 @@ if __name__ == '__main__':
     # Run Glicko ratings
 
     # Consolidate massey ordinals in a logical way
-    ord_fnme = Path("C:\\Users\\Jeff\\PycharmProjects\\mmadness\\data\\MMasseyOrdinals.csv")
+    ord_fnme = Path(f"{config['load_data']['data_path']}/MMasseyOrdinals.csv")
     ord_df = pd.read_csv(ord_fnme)
     ord_df = ord_df.pivot_table(index=['Season', 'TeamID', 'RankingDayNum'], columns=['SystemName'])
     ord_df.columns = ord_df.columns.droplevel(0)
@@ -270,6 +382,7 @@ if __name__ == '__main__':
     ord_id = ord_id[ord_id['Season'] > 2002]
     adf[['t_rank', 'o_rank']] = 0.
 
+    print('Running ranking consolidation...')
     for t in tqdm(tids):
         t_ords = ord_df.loc[:, t, :]
         ord_id_local = ord_id.loc[np.logical_or(ord_id['TeamID'] == t, ord_id['oid'] == t)].set_index(['Season', 'RankingDayNum'])
@@ -286,10 +399,37 @@ if __name__ == '__main__':
     adf.loc[ind_0, 'o_rank'] = adf.loc[ind_1, 't_rank'].values
     adf.loc[ind_1, 'o_rank'] = adf.loc[ind_0, 't_rank'].values
 
+    # Add in seasonal stats to the avdf frame
+    print('Adding seasonal stats to frame...')
+    adf[['t_score', 'o_score', 'numot']] = sdf[['t_score', 'o_score', 'numot']]
+    avdf = addSeasonalStatsToFrame(adf, avdf, True)
+
     # Save out the files so we can use them later
-    adf.to_csv('./MGameDataAdv.csv')
-    avdf.to_csv('./MAverages.csv')
-    sdf.to_csv('./MGameDataBasic.csv')
+    if config['load_data']['save_files']:
+        adf.to_csv(f'{config["load_data"]["save_path"]}/MGameDataAdv.csv')
+        sdf.to_csv(f'{config["load_data"]["save_path"]}/MGameDataBasic.csv')
+
+    # Create a dataframe of the tournament results with average data
+    ncaa_fnme = f'{config["load_data"]["data_path"]}/MNCAATourneyCompactResults.csv'
+    ncaa_tdf = pd.read_csv(ncaa_fnme)
+
+    ncaa_tdf = prepFrame(ncaa_tdf)
+
+    # Add in secondary tourney results
+    sec_fnme = f'{config["load_data"]["data_path"]}/MSecondaryTourneyCompactResults.csv'
+    sc_tdf = pd.read_csv(sec_fnme)
+    ncaa_tdf = pd.concat([ncaa_tdf, prepFrame(sc_tdf)])
+
+    # merge information with teams
+    print('Generating tournament training data...')
+    avdf_norm = normalize(avdf, to_season=True)
+    tdf, odf = getMatches(ncaa_tdf, avdf)
+
+    if config['load_data']['save_files']:
+        avdf_norm.to_csv(f'{config["load_data"]["save_path"]}/MAverages.csv')
+        tdf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_0.csv')
+        odf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_1.csv')
+
 
 
 
