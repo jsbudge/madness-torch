@@ -1,7 +1,7 @@
 import torch
 from pytorch_lightning import Trainer, loggers, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, StochasticWeightAveraging, ModelCheckpoint
-from dataloader import EncoderDataModule
+from dataloader import EncoderDataModule, PredictorDataModule
 from model import Encoder, Predictor
 from sklearn.decomposition import KernelPCA
 import numpy as np
@@ -12,7 +12,7 @@ import yaml
 
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
-    gpu_num = 1
+    gpu_num = 0
     device = f'cuda:{gpu_num}' if torch.cuda.is_available() else 'cpu'
     seed_everything(np.random.randint(1, 2048), workers=True)
 
@@ -23,26 +23,28 @@ if __name__ == '__main__':
             print(exc)
     # seed_everything(43, workers=True)
 
-    data = EncoderDataModule(**config['dataloader'])
+    data = PredictorDataModule(**config['dataloader'])
     data.setup()
 
     # Get the model, experiment, logger set up
-    model = Encoder(**config['model'])
-    logger = loggers.TensorBoardLogger(config['training']['log_dir'], name=config['model']['model_name'])
-    expected_lr = max((config['model']['lr'] * target_config.scheduler_gamma ** (target_config.max_epochs *
-                                                                target_config.swa_start)), 1e-9)
-    trainer = Trainer(logger=logger, max_epochs=target_config.max_epochs, default_root_dir=target_config.weights_path,
-                      log_every_n_steps=target_config.log_epoch, devices=[gpu_num], callbacks=
-                      [EarlyStopping(monitor='train_loss', patience=target_config.patience,
+    config['model']['init_size'] = data.train_dataset.data_len
+    model = Predictor(**config['model'])
+    logger = loggers.TensorBoardLogger(config['training']['log_dir'], name=config['model']['name'])
+    expected_lr = max((config['model']['lr'] * config['model']['scheduler_gamma'] ** (config['training']['max_epochs'] *
+                                                                config['training']['swa_start'])), 1e-9)
+    trainer = Trainer(logger=logger, max_epochs=config['training']['max_epochs'],
+                      default_root_dir=config['training']['weights_path'],
+                      log_every_n_steps=config['training']['log_epoch'], devices=[gpu_num], callbacks=
+                      [EarlyStopping(monitor='train_loss', patience=config['training']['patience'],
                                      check_finite=True),
                        StochasticWeightAveraging(swa_lrs=expected_lr,
-                                                 swa_epoch_start=target_config.swa_start),
+                                                 swa_epoch_start=config['training']['swa_start']),
                        ModelCheckpoint(monitor='train_loss')])
 
     print("======= Training =======")
     try:
-        if target_config.warm_start:
-            trainer.fit(model, ckpt_path=f'{target_config.weights_path}/{target_config.model_name}.ckpt',
+        if config['training']['warm_start']:
+            trainer.fit(model, ckpt_path=f'{config['training']['weights_path']}/{config['model']['name']}.ckpt',
                         datamodule=data)
         else:
             trainer.fit(model, datamodule=data)
@@ -52,5 +54,5 @@ if __name__ == '__main__':
         else:
             print('adios!')
             exit(0)
-    if target_config.save_model:
-        trainer.save_checkpoint(f'{target_config.weights_path}/{target_config.model_name}.ckpt')
+    if config['training']['save_model']:
+        trainer.save_checkpoint(f'{config['training']['weights_path']}/{config['model']['name']}.ckpt')

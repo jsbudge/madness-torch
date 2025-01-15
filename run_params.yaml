@@ -1,32 +1,35 @@
 load_data:
-  data_path: /home/jeff/repo/mmadness/data
+  data_path: D:\madness_data\data\
   init_elo_params: [0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217]
   init_season: 2002
-  save_path: ./data  # This should usually be the same as the data_path
+  save_path: D:\madness_data\data\  # This should usually be the same as the data_path
   save_files: True
   run_elo_opt: False
 
 dataloader:
-  datapath: ./data/MAverages.csv
-  train_batch_size: 16
-  val_batch_size: 16
+  datapath: D:\madness_data\data
+  train_batch_size: 64
+  val_batch_size: 64
   split: .7
   single_example: False
   pin_memory: False
 
 model:
-  name: Encoder
-  init_size: 256
-  latent_size: 22
-  lr: .00001
-  weight_decay: 0.0
-  scheduler_gamma: .7
-  betas: (.9, .99)
+  name: Predictor
+  init_size: 128
+  latent_size: 52
+  lr: .00000001
+  weight_decay: 0.01
+  scheduler_gamma: .99
+  betas: [.9, .99]
+  num_samples: 100
 
 training:
   log_dir: ./logs
   swa_start: .7
-  max_epochs: 12
-  log_epoch: 5
+  max_epochs: 1000
+  log_epoch: 50
   weights_path: ./models
-  
+  warm_start: False
+  save_model: True
+  patience: 500
