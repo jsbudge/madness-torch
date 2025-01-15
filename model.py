@@ -9,11 +9,16 @@ from torch.nn import functional as tf
 
 class Encoder(LightningModule):
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, init_size: int = 256, latent_size: int = 22, lr: float = 1e-5, weight_decay: float = 0.0,
+                 scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self.init_size = 256
-        self.latent_size = 22
+        self.init_size = init_size
+        self.latent_size = latent_size
         self.automatic_optimization = False
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.scheduler_gamma = scheduler_gamma
+        self.betas = betas
 
         self.encoder = nn.Sequential(
             nn.Linear(self.init_size, self.latent_size),
@@ -54,36 +59,33 @@ class Encoder(LightningModule):
     def validation_step(self, batch, batch_idx):
         self.train_val_get(batch, batch_idx, 'val')
 
-    def on_after_backward(self) -> None:
-        if self.trainer.is_global_zero and self.global_step % 100 == 0 and self.logger:
-            for name, params in self.named_parameters():
-                self.logger.experiment.add_histogram(name, params, self.global_step)
-
     def on_train_epoch_end(self) -> None:
-        sch = self.lr_schedulers()
-
-    def on_validation_epoch_end(self) -> None:
         sch = self.lr_schedulers()
 
         # If the selected scheduler is a ReduceLROnPlateau scheduler.
         if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
             sch.step(self.trainer.callback_metrics["val_loss"])
-            self.log('LR', sch.get_last_lr()[0], rank_zero_only=True)
+        else:
+            sch.step()
+        if self.trainer.is_global_zero and not self.config.is_tuning and self.config.loss_landscape:
+            self.optim_path.append(self.get_flat_params())
+
+    def on_validation_epoch_end(self) -> None:
+        self.log('lr', self.lr_schedulers().get_last_lr()[0], prog_bar=True, rank_zero_only=True)
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(self.parameters(),
-                                lr=self.params['LR'],
-                                weight_decay=self.params['weight_decay'],
-                                betas=self.params['betas'],
-                                eps=1e-7)
-        optims = [optimizer]
-        if self.params['scheduler_gamma'] is None:
-            return optims
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optims[0], cooldown=self.params['step_size'],
-                                                         factor=self.params['scheduler_gamma'], threshold=1e-5)
-        scheds = [scheduler]
+        optimizer = torch.optim.AdamW(self.parameters(),
+                                      lr=self.lr,
+                                      weight_decay=self.weight_decay,
+                                      betas=self.betas,
+                                      eps=1e-7)
+        if self.scheduler_gamma is None:
+            return optimizer
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=self.scheduler_gamma)
+        '''scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=self.params['step_size'],
+                                                         factor=self.params['scheduler_gamma'], threshold=1e-5)'''
 
-        return optims, scheds
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def train_val_get(self, batch, batch_idx, kind='train'):
         img, img = batch

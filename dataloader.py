@@ -41,7 +41,8 @@ class EncoderDataModule(LightningDataModule):
             pin_memory: bool = False,
             single_example: bool = False,
             device: str = 'cpu',
-            collate: bool = False,
+            datapath: str = './data',
+            split: float = .7,
             **kwargs,
     ):
         super().__init__()
@@ -54,9 +55,8 @@ class EncoderDataModule(LightningDataModule):
         self.pin_memory = pin_memory
         self.single_example = single_example
         self.device = device
-        self.collate = collate
-        self.train_sampler = None
-        self.val_sampler = None
+        self.datapath = datapath
+        self.split = split
 
     def setup(self, stage: Optional[str] = None) -> None:
         self.train_dataset = EncoderDataset(self.datapath, self.split)
@@ -65,17 +65,15 @@ class EncoderDataModule(LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
-            batch_size=self.train_batch_size if self.train_sampler is None else 1,
+            batch_size=self.train_batch_size,
             num_workers=self.num_workers,
-            batch_sampler=self.train_sampler,
             pin_memory=self.pin_memory,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return DataLoader(
             self.val_dataset,
-            batch_size=self.val_batch_size if self.val_sampler is None else 1,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
-            batch_sampler=self.val_sampler,
             pin_memory=self.pin_memory,
         )
