@@ -419,16 +419,20 @@ if __name__ == '__main__':
     sec_fnme = f'{config["load_data"]["data_path"]}/MSecondaryTourneyCompactResults.csv'
     sc_tdf = pd.read_csv(sec_fnme)
     ncaa_tdf = pd.concat([ncaa_tdf, prepFrame(sc_tdf)])
+    ncaa_tdf['t_win'] = ncaa_tdf['t_score'] - ncaa_tdf['o_score'] > 0
 
     # merge information with teams
     print('Generating tournament training data...')
     avdf_norm = normalize(avdf, to_season=True)
-    tdf, odf = getMatches(ncaa_tdf, avdf)
+    tdf, odf = getMatches(ncaa_tdf, avdf_norm)
+    results_df = ncaa_tdf.loc[tdf.index, ['t_win']]
 
     if config['load_data']['save_files']:
         avdf_norm.to_csv(f'{config["load_data"]["save_path"]}/MAverages.csv')
         tdf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_0.csv')
         odf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_1.csv')
+        results_df.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_label.csv')
+
 
 
 
