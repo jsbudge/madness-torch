@@ -11,28 +11,32 @@ import numpy as np
 from multiprocessing import cpu_count
 from sklearn.model_selection import train_test_split
 
+from load_data import getMatches, normalize
+
 
 class EncoderDataset(Dataset):
     def __init__(self, datapath: str = './data', split: float = 1., is_val: bool = False, seed: int = 7):
         # Load in data
         self.datapath = datapath
-        csv_df = pd.read_csv(self.datapath)
+        av_df = pd.read_csv(f'{self.datapath}/MAverages.csv').set_index(['season', 'tid'])
+        sdf = pd.read_csv(f'{self.datapath}/MGameDataBasic.csv').set_index(['gid', 'season', 'tid', 'oid'])
+        sdf = normalize(sdf[['t_score', 'o_score', 't_ast', 'o_ast', 't_stl', 'o_stl']], to_season=True).sort_index()
+        av0, av1 = getMatches(sdf, av_df, diff=False, sort=True)
 
-        if split < 1:
-            Xs, Xt, _, _ = train_test_split(csv_df,
-                                            csv_df,
-                                            test_size=split, random_state=seed)
-        else:
-            Xt = csv_df
-            Xs = csv_df
-        self.data = torch.tensor(Xt.values, dtype=torch.float32) if is_val else torch.tensor(Xs.values, dtype=torch.float32)
-        self.data_len = self.data.shape[1]
+        Xt0, Xs0, Xt1, Xs1, yt, ys = train_test_split(av0, av1, sdf, test_size=split, random_state=seed)
+        self.t_data = torch.tensor(Xs0.values, dtype=torch.float32) if is_val else torch.tensor(Xt0.values, dtype=torch.float32)
+        self.o_data = torch.tensor(Xs1.values, dtype=torch.float32) if is_val else torch.tensor(Xt1.values,
+                                                                                                dtype=torch.float32)
+        self.labels = torch.tensor(ys.values, dtype=torch.float32) if is_val else torch.tensor(yt.values,
+                                                                                                dtype=torch.float32)
+
+        self.data_len = self.t_data.shape[1]
 
     def __getitem__(self, idx):
-        return self.data[idx], self.data[idx]
+        return self.t_data[idx], self.o_data[idx], self.labels[idx]
 
     def __len__(self):
-        return self.data.shape[0]
+        return self.t_data.shape[0]
 
 class EncoderDataModule(LightningDataModule):
     def __init__(

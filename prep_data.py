@@ -13,7 +13,7 @@ if __name__ == '__main__':
             print(exc)
 
     datapath = config['dataloader']['datapath']
-    t0 = pd.read_csv(f'{datapath}/MTrainingData_0.csv').set_index(['gid', 'season', 'tid', 'oid'])
+    t0 = pd.read_csv(f'{datapath}/MGameDataAdv.csv').set_index(['gid', 'season', 'tid', 'oid'])
     t1 = pd.read_csv(f'{datapath}/MTrainingData_1.csv').set_index(['gid', 'season', 'tid', 'oid'])
     results = pd.read_csv(f'{datapath}/MTrainingData_label.csv').set_index(['gid', 'season', 'tid', 'oid'])
 
@@ -23,4 +23,4 @@ if __name__ == '__main__':
     rfc.fit(Xs0 - Xs1, ys.values.ravel())
 
     test_res = rfc.predict(Xt0 - Xt1)
-    res_acc = sum([x == y for x, y in zip(yt.values.flatten(), rfc.predict(Xt0 - Xt1))]) / Xt0.shape[0]
+    res_acc = sum([x == y for x, y in zip(yt.values.flatten(), test_res)]) / Xt0.shape[0]

@@ -1,6 +1,7 @@
 from typing import Any
 
 import numpy as np
+from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
 from torch.distributions import MultivariateNormal
 import torch
 from pytorch_lightning import LightningModule
@@ -15,33 +16,44 @@ class Encoder(LightningModule):
         super().__init__()
         self.init_size = init_size
         self.latent_size = latent_size
+        self.output_size = 6
         self.automatic_optimization = False
         self.lr = lr
         self.weight_decay = weight_decay
         self.scheduler_gamma = scheduler_gamma
         self.betas = betas
 
-        self.encoder = nn.Sequential(
-            nn.Linear(self.init_size, self.latent_size),
-            nn.GELU(),
-            nn.Linear(self.latent_size, self.latent_size),
-            nn.GELU(),
+        self.encoder_games = nn.Sequential(
+            nn.Linear(self.init_size, self.latent_size * 2),
+            nn.SiLU(),
+            nn.Linear(self.latent_size * 2, self.latent_size * 2),
+            nn.SiLU(),
+            nn.Linear(self.latent_size * 2, self.latent_size),
         )
 
-        self.decoder = nn.Sequential(
-            nn.Linear(self.latent_size, self.latent_size),
-            nn.GELU(),
-            nn.Linear(self.latent_size, self.init_size),
+        self.apply_opp = nn.Sequential(
+            nn.Linear(self.latent_size * 2, self.latent_size),
+            nn.SiLU(),
+            nn.Linear(self.latent_size, self.output_size),
         )
+
+        dnn_to_bnn(self.apply_opp, bnn_prior_parameters = {
+              "prior_mu": 0.0,
+              "prior_sigma": 1.0,
+              "posterior_mu_init": 0.0,
+              "posterior_rho_init": -4.0,
+              "type": "Reparameterization",  # Flipout or Reparameterization
+              "moped_enable": False,
+        })
 
     def encode(self, x):
-        return self.encoder(x)
+        return self.encoder_games(x)
 
-    def decode(self, x_hat):
-        return self.decoder(x_hat)
-
-    def forward(self, x):
-        return self.decode(self.encode(x))
+    def forward(self, x, y):
+        x = self.encode(x)
+        y = self.encode(y)
+        x = self.apply_opp(torch.cat([x, y], dim=-1))
+        return x
 
     def loss_function(self, y, y_pred):
         return tf.mse_loss(y, y_pred)
@@ -87,10 +99,10 @@ class Encoder(LightningModule):
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def train_val_get(self, batch, batch_idx, kind='train'):
-        img, img = batch
+        team, opp, targets = batch
 
-        results = self.forward(img)
-        train_loss = self.loss_function(results, img)
+        results = self.forward(team, opp)
+        train_loss = self.loss_function(results, targets)
 
         self.log_dict({f'{kind}_loss': train_loss}, on_epoch=True,
                       prog_bar=True, rank_zero_only=True)
@@ -112,13 +124,23 @@ class Predictor(LightningModule):
         self.betas = betas
         self.num_samples = num_samples
 
-        self.team_prep = nn.Sequential(
+        self.encoding_mu = nn.Sequential(
             nn.Linear(self.init_size, self.init_size),
             nn.GELU(),
             nn.Linear(self.init_size, self.init_size),
             nn.GELU(),
+            nn.Dropout(.5),
             nn.Linear(self.init_size, self.latent_size),
+        )
+
+        self.encoding_var = nn.Sequential(
+            nn.Linear(self.init_size, self.init_size),
             nn.GELU(),
+            nn.Linear(self.init_size, self.init_size),
+            nn.GELU(),
+            nn.Dropout(.5),
+            nn.Linear(self.init_size, self.latent_size),
+            nn.Softplus(),
         )
 
         self.combine = nn.Sequential(

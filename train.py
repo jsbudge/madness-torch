@@ -23,12 +23,12 @@ if __name__ == '__main__':
             print(exc)
     # seed_everything(43, workers=True)
 
-    data = PredictorDataModule(**config['dataloader'])
+    data = EncoderDataModule(**config['dataloader'])
     data.setup()
 
     # Get the model, experiment, logger set up
     config['model']['init_size'] = data.train_dataset.data_len
-    model = Predictor(**config['model'])
+    model = Encoder(**config['model'])
     logger = loggers.TensorBoardLogger(config['training']['log_dir'], name=config['model']['name'])
     expected_lr = max((config['model']['lr'] * config['model']['scheduler_gamma'] ** (config['training']['max_epochs'] *
                                                                 config['training']['swa_start'])), 1e-9)
