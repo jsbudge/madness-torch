@@ -224,6 +224,17 @@ def addSeasonalStatsToFrame(sdf: DataFrame, df: DataFrame, add_to_frame: bool = 
 
     return df.merge(out_df, right_index=True, left_index=True) if add_to_frame else out_df
 
+def loadTeamNames(datapath: str = './data'):
+    """
+    Create a dict of team names and ids so we know who's behind the numbers.
+    :return: Dict of teamIDs and names.
+    """
+    df = pd.concat([pd.read_csv(f'{datapath}/MTeams.csv'), pd.read_csv(f'{datapath}/WTeams.csv')]).sort_index()
+    ret = {}
+    for idx, row in df.iterrows():
+        ret[row['TeamID']] = row['TeamName']
+        ret[row['TeamName']] = row['TeamID']
+    return ret
 
 if __name__ == '__main__':
 
