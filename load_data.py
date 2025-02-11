@@ -1,3 +1,5 @@
+from itertools import permutations
+
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -61,6 +63,38 @@ def getMatches(gids: DataFrame, team_feats: DataFrame, season: int = None, diff:
         else:
             return g1, g2
 
+
+def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None):
+    """
+    Gets the possible matches in any season of all the teams in the tournament.
+    :param use_seed: If True, only gets the tournament participants. Otherwise uses every team that's played that season
+    :param team_feats: Frame of features wanted for hypothetical matchups. Should have index of [Season, TID]
+    :param season: Season for which data is wanted.
+    :param diff: if True, returns differences of features. If False, returns two frames with features.
+    :return: Returns either one frame or two, based on diff parameter, of game features.
+    """
+    if use_seed:
+        sd = pd.read_csv(f'{datapath}/MNCAATourneySeeds.csv')
+    else:
+        sd = pd.read_csv(f'{datapath}/MRegularSeasonCompactResults.csv')
+    sd = sd.loc[sd['Season'] == season]['TeamID'].values
+    teams = list(set(sd))
+    matches = [[x, y] for (x, y) in permutations(teams, 2)]
+    poss_games = pd.DataFrame(data=matches, columns=['tid', 'oid'])
+    poss_games['season'] = season
+    poss_games['gid'] = np.arange(poss_games.shape[0])
+    gsc = poss_games.set_index(['gid', 'season'])
+    g1 = gsc.merge(team_feats, left_on=['season', 'tid'],
+                   right_on=['season', 'tid'], right_index=True).sort_index()
+    g1 = g1.reset_index().set_index(['gid', 'season', 'tid', 'oid'])
+    g2 = gsc.merge(team_feats, left_on=['season', 'oid'],
+                   right_on=['season', 'tid'],
+                   right_index=True).sort_index()
+    g2 = g2.reset_index().set_index(['gid', 'season', 'tid', 'oid'])
+    if diff:
+        return g1 - g2
+    else:
+        return g1, g2
 
 def prepFrame(df: DataFrame, full_frame: bool = True) -> DataFrame:
     df = df.rename(columns={'WLoc': 'gloc'})

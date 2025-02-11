@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from anytree import Node, NodeMixin, RenderTree, AsciiStyle
 from anytree.iterators.zigzaggroupiter import ZigZagGroupIter
-from load_data import loadTeamNames
+from load_data import loadTeamNames, getPossMatches
 
 
 def scoreBracket(br, truth_br, score_type=None):
@@ -229,4 +229,12 @@ def applyResultsToBracket(br: Bracket, res: pd.DataFrame,
 if __name__ == '__main__':
 
     season = 2023
-    test = generateBracket(season, True, datapath="D:\\\\madness_data\\data")
+    datapath = "D:\\\\madness_data\\data"
+    test = generateBracket(season, True, datapath=datapath)
+    feats = pd.read_csv(f'{datapath}\\MAverages.csv').set_index(['season', 'tid'])
+
+    df = getPossMatches(feats, season, datapath=datapath)[0]
+
+    results = pd.DataFrame(index=df.index, columns=['Res'], data=np.random.rand(df.shape[0]))
+
+    test = applyResultsToBracket(test, results)
