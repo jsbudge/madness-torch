@@ -2,6 +2,7 @@ from glob import glob
 from typing import List, Optional, Union, Iterator
 import os
 import yaml
+from pandas import DataFrame
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 import torch
@@ -19,24 +20,19 @@ class EncoderDataset(Dataset):
         # Load in data
         self.datapath = datapath
         av_df = pd.read_csv(f'{self.datapath}/MAverages.csv').set_index(['season', 'tid'])
-        sdf = pd.read_csv(f'{self.datapath}/MGameDataBasic.csv').set_index(['gid', 'season', 'tid', 'oid'])
-        sdf = normalize(sdf[['t_score', 'o_score', 't_ast', 'o_ast', 't_stl', 'o_stl']], to_season=True).sort_index()
-        av0, av1 = getMatches(sdf, av_df, diff=False, sort=True)
 
-        Xt0, Xs0, Xt1, Xs1, yt, ys = train_test_split(av0, av1, sdf, test_size=split, random_state=seed)
-        self.t_data = torch.tensor(Xs0.values, dtype=torch.float32) if is_val else torch.tensor(Xt0.values, dtype=torch.float32)
-        self.o_data = torch.tensor(Xs1.values, dtype=torch.float32) if is_val else torch.tensor(Xt1.values,
-                                                                                                dtype=torch.float32)
+        Xt, Xs, yt, ys = train_test_split(av_df, av_df, test_size=split, random_state=seed)
+        self.data = torch.tensor(Xs.values, dtype=torch.float32) if is_val else torch.tensor(Xt.values, dtype=torch.float32)
         self.labels = torch.tensor(ys.values, dtype=torch.float32) if is_val else torch.tensor(yt.values,
                                                                                                 dtype=torch.float32)
 
-        self.data_len = self.t_data.shape[1]
+        self.data_len = self.data.shape[1]
 
     def __getitem__(self, idx):
-        return self.t_data[idx], self.o_data[idx], self.labels[idx]
+        return self.data[idx], self.labels[idx]
 
     def __len__(self):
-        return self.t_data.shape[0]
+        return self.data.shape[0]
 
 class EncoderDataModule(LightningDataModule):
     def __init__(
@@ -85,22 +81,29 @@ class EncoderDataModule(LightningDataModule):
 
 
 class PredictorDataset(Dataset):
-    def __init__(self, datapath: str = './data', split: float = 1., is_val: bool = False, seed: int = 7):
+    def __init__(self, datapath: str = './data', split: float = 1., file: DataFrame = None, is_val: bool = False, seed: int = 7):
         # Load in data
         self.datapath = datapath
-        t0 = pd.read_csv(f'{self.datapath}/MTrainingData_0.csv').set_index(['gid', 'season', 'tid', 'oid'])
-        t1 = pd.read_csv(f'{self.datapath}/MTrainingData_1.csv').set_index(['gid', 'season', 'tid', 'oid'])
-        results = pd.read_csv(f'{self.datapath}/MTrainingData_label.csv').set_index(['gid', 'season', 'tid', 'oid'])
-
-        if split < 1:
-            Xs0, Xt0, Xs1, Xt1, ys, yt = train_test_split(t0, t1, results, test_size=split, random_state=seed)
+        if not is_val:
+            data = pd.read_csv(f'{self.datapath}/MGameDataBasic.csv').set_index(['gid', 'season', 'tid', 'oid'])
+            results = pd.DataFrame(data=(data['t_score'] - data['o_score']) > 0)
         else:
-            Xt0 = t0
-            Xs0 = t0
-            Xt1 = t1
-            Xs1 = t1
-            ys = results
-            yt = results
+            results = pd.read_csv(f'{self.datapath}/MTrainingData_label.csv').set_index(['gid', 'season', 'tid', 'oid'])
+        if file is None:
+            t0 = pd.read_csv(f'{self.datapath}/MTrainingData_0.csv').set_index(['gid', 'season', 'tid', 'oid'])
+            t1 = pd.read_csv(f'{self.datapath}/MTrainingData_1.csv').set_index(['gid', 'season', 'tid', 'oid'])
+        else:
+            t0, t1, = getMatches(results, file, diff=False)
+
+        '''if split < 1:
+            Xs0, Xt0, Xs1, Xt1, ys, yt = train_test_split(t0, t1, results, test_size=split, random_state=seed)
+        else:'''
+        Xt0 = t0
+        Xs0 = t0
+        Xt1 = t1
+        Xs1 = t1
+        ys = results
+        yt = results
         self.d0 = torch.tensor(Xt0.values, dtype=torch.float32) if is_val else torch.tensor(Xs0.values, dtype=torch.float32)
         self.d1 = torch.tensor(Xt1.values, dtype=torch.float32) if is_val else torch.tensor(Xs1.values, dtype=torch.float32)
         self.labels = torch.tensor(yt.values, dtype=torch.float32) if is_val else torch.tensor(ys.values, dtype=torch.float32)
@@ -122,6 +125,7 @@ class PredictorDataModule(LightningDataModule):
             device: str = 'cpu',
             datapath: str = './data',
             split: float = .7,
+            file: DataFrame = None,
             **kwargs,
     ):
         super().__init__()
@@ -136,10 +140,11 @@ class PredictorDataModule(LightningDataModule):
         self.device = device
         self.datapath = datapath
         self.split = split
+        self.file = file
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self.train_dataset = PredictorDataset(self.datapath, self.split)
-        self.val_dataset = PredictorDataset(self.datapath, self.split, is_val=True)
+        self.train_dataset = PredictorDataset(self.datapath, self.split, file=self.file)
+        self.val_dataset = PredictorDataset(self.datapath, self.split, file=self.file, is_val=True)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(

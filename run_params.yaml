@@ -1,25 +1,37 @@
 load_data:
-  data_path: D:\madness_data\data
+  data_path: ./data
   init_elo_params: [0.3896076731384477, 6.51988202753904, 34.11927604457895, 0.17251109126016217]
-  init_season: 2002
-  save_path: D:\madness_data\data  # This should usually be the same as the data_path
+  init_season: 2003
+  save_path: ./data  # This should usually be the same as the data_path
   save_files: False
   run_elo_opt: False
 
 dataloader:
-  datapath: D:\madness_data\data
-  train_batch_size: 256
-  val_batch_size: 256
+  datapath: ./data
+  train_batch_size: 32
+  val_batch_size: 32
   split: .7
   single_example: False
   pin_memory: False
 
 model:
+  name: Predictor
+  init_size: 128
+  latent_size: 16
+  sigma: 1.
+  encode_sz: 5
+  lr: .0001
+  weight_decay: 0.15
+  scheduler_gamma: .99
+  betas: [.9, .99]
+  num_samples: 100
+
+encoder:
   name: Encoder
   init_size: 128
-  latent_size: 60
+  latent_size: 40
   lr: .01
-  weight_decay: 0.01
+  weight_decay: 0.2
   scheduler_gamma: .99
   betas: [.9, .99]
   num_samples: 100
@@ -32,4 +44,4 @@ training:
   weights_path: ./models
   warm_start: False
   save_model: True
-  patience: 500
+  patience: 50
