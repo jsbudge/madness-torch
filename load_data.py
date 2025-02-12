@@ -451,8 +451,8 @@ if __name__ == '__main__':
 
     # Save out the files so we can use them later
     if config['load_data']['save_files']:
-        adf.to_csv(f'{config["load_data"]["save_path"]}/MGameDataAdv.csv')
-        sdf.to_csv(f'{config["load_data"]["save_path"]}/MGameDataBasic.csv')
+        adf.to_csv(Path(f'{config["load_data"]["save_path"]}/MGameDataAdv.csv'))
+        sdf.to_csv(Path(f'{config["load_data"]["save_path"]}/MGameDataBasic.csv'))
 
     # Create a dataframe of the tournament results with average data
     ncaa_fnme = f'{config["load_data"]["data_path"]}/MNCAATourneyCompactResults.csv'
@@ -469,14 +469,11 @@ if __name__ == '__main__':
     # merge information with teams
     print('Generating tournament training data...')
     avdf_norm = normalize(avdf, to_season=True)
-    tdf, odf = getMatches(ncaa_tdf, avdf_norm)
-    results_df = ncaa_tdf.loc[tdf.index, ['t_win']]
+    # tdf, odf = getMatches(ncaa_tdf, avdf_norm)
+    # results_df = ncaa_tdf.loc[tdf.index, ['t_win']]
 
     if config['load_data']['save_files']:
-        avdf_norm.to_csv(f'{config["load_data"]["save_path"]}/MAverages.csv')
-        tdf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_0.csv')
-        odf.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_1.csv')
-        results_df.to_csv(f'{config["load_data"]["save_path"]}/MTrainingData_label.csv')
+        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MAverages.csv'))
 
 
 

@@ -101,7 +101,7 @@ class Encoder(LightningModule):
 
 class Predictor(LightningModule):
 
-    def __init__(self, init_size: int = 256, latent_size: int = 22, lr: float = 1e-5, weight_decay: float = 0.0,
+    def __init__(self, init_size: int = 62, latent_size: int = 62, lr: float = 1e-5, weight_decay: float = 0.0,
                  encoded_sz: int = 10, sigma: float = 10., scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args: Any, **kwargs: Any):
         super().__init__()
         self.init_size = init_size
@@ -119,14 +119,21 @@ class Predictor(LightningModule):
         self.encoder_games = nn.Sequential(
             nn.Linear(self.encoded_size, self.latent_size),
             nn.SiLU(),
-            nn.Dropout(.5),
-            nn.Linear(self.latent_size, self.latent_size),
         )
 
         self.apply_opp = nn.Sequential(
             nn.Linear(self.latent_size, self.output_size),
             nn.Sigmoid()
         )
+
+        dnn_to_bnn(self.encoder_games, bnn_prior_parameters={
+            "prior_mu": 0.0,
+            "prior_sigma": 1.0,
+            "posterior_mu_init": 0.0,
+            "posterior_rho_init": -4.0,
+            "type": "Reparameterization",  # Flipout or Reparameterization
+            "moped_enable": False,
+        })
 
         dnn_to_bnn(self.apply_opp, bnn_prior_parameters={
             "prior_mu": 0.0,
