@@ -19,7 +19,7 @@ model:
   init_size: 62
   latent_size: 62
   sigma: 1.
-  encode_sz: 5
+  encode_sz: 15
   lr: .01
   weight_decay: 0.01
   scheduler_gamma: .99
