@@ -9,9 +9,9 @@ class SKLearnWrapper(object):
 
     def forward(self, x):
         try:
-            return self.classifier.predict_proba(x)
+            return self.classifier.predict_proba(x)[:, 0]
         except:
-            return self.classifier.predict(x)
+            return self.classifier.predict(x)[:, 0]
 
     def fit(self, x, y):
         self.classifier.fit(x, y)

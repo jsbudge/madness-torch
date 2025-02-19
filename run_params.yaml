@@ -17,11 +17,11 @@ dataloader:
 model:
   name: Predictor
   init_size: 62
-  latent_size: 62
+  latent_size: 100
   sigma: 1.
   encode_sz: 15
-  lr: .01
-  weight_decay: 0.01
+  lr: .00001
+  weight_decay: 0.0
   scheduler_gamma: .99
   betas: [.9, .99]
   num_samples: 100

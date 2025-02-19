@@ -119,6 +119,8 @@ class Predictor(LightningModule):
         self.encoder_games = nn.Sequential(
             nn.Linear(self.encoded_size, self.latent_size),
             nn.SiLU(),
+            nn.Linear(self.latent_size, self.latent_size),
+            nn.SiLU(),
         )
 
         self.apply_opp = nn.Sequential(
