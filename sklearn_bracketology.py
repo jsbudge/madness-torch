@@ -7,9 +7,19 @@ from sklearn.decomposition import TruncatedSVD, KernelPCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.svm import NuSVC
+from sklearn.svm import SVC
 
 from load_data import getMatches, getPossMatches, prepFrame
+
+def runEstimator(feats, feat_name, df):
+    t0, t1 = getMatches(data, feats)
+    s0, s1 = getMatches(tdata, feats)
+    Xt0, Xs0, Xt1, Xs1, yt, ys = train_test_split(t0, t1, results, test_size=.3)
+
+    rfc = RandomForestClassifier()
+    rfc.fit(Xt0 - Xt1, yt)
+    df.loc[s0.index, f'RFC_{feat_name}'] = rfc.predict_proba(s0 - s1)[:, 0]
+    return df
 
 if __name__ == '__main__':
     with open('./run_params.yaml', 'r') as file:
@@ -32,27 +42,21 @@ if __name__ == '__main__':
             print(f'Running {fnme}...')
             feats = pd.read_csv(Path(f'{datapath}\\{fnme}.csv')).set_index(['season', 'tid'])
 
-            t0, t1 = getMatches(data, feats)
-            s0, s1 = getMatches(tdata, feats)
-            Xt0, Xs0, Xt1, Xs1, yt, ys = train_test_split(t0, t1, results, test_size=.3)
-
-            rfc = RandomForestClassifier()
-            rfc.fit(Xt0 - Xt1, yt)
-
-            method_results.loc[s0.index, f'RFC_{fnme}'] = rfc.predict_proba(s0 - s1)[:, 0]
+            method_results = runEstimator(feats, fnme[1:], method_results)
+            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
 
             # Truncated SVD
             tsvd = TruncatedSVD(n_components=60)
             trans_feats = pd.DataFrame(data=tsvd.fit_transform(feats), index=feats.index)
 
-            t0, t1 = getMatches(data, trans_feats)
-            s0, s1 = getMatches(tdata, trans_feats)
-            Xt0, Xs0, Xt1, Xs1, yt, ys = train_test_split(t0, t1, results, test_size=.3)
+            method_results = runEstimator(trans_feats, f'TSVD_{fnme[1:]}', method_results)
+            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
 
-            rfc = RandomForestClassifier()
-            rfc.fit(Xt0 - Xt1, yt)
-
-            method_results.loc[s0.index, f'RFC_TSVD_{fnme}'] = rfc.predict_proba(s0 - s1)[:, 0]
+            fnme = f'MNormalized{method}EncodedData' if prenorm else f'M{method}EncodedData'
+            print(f'Running {fnme}...')
+            feats = pd.read_csv(Path(f'{datapath}\\{fnme}.csv')).set_index(['season', 'tid'])
+            method_results = runEstimator(feats, fnme[1:], method_results)
+            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
 
     method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
 

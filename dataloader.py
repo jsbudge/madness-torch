@@ -12,7 +12,7 @@ import numpy as np
 from multiprocessing import cpu_count
 from sklearn.model_selection import train_test_split
 
-from load_data import getMatches, normalize
+from load_data import getMatches, normalize, prepFrame
 
 
 class EncoderDataset(Dataset):
@@ -90,7 +90,9 @@ class PredictorDataset(Dataset):
             data = pd.read_csv(f'{self.datapath}/MGameDataBasic.csv').set_index(['gid', 'season', 'tid', 'oid'])
             results = pd.DataFrame(data=(data['t_score'] - data['o_score']) > 0)
         else:
-            results = pd.read_csv(f'{self.datapath}/MTrainingData_label.csv').set_index(['gid', 'season', 'tid', 'oid'])
+            data = pd.read_csv(f'{self.datapath}/MNCAATourneyCompactResults.csv')
+            data = prepFrame(data, True)
+            results = pd.DataFrame(data=(data['t_score'] - data['o_score']) > 0)
         if file is None:
             t0 = pd.read_csv(f'{self.datapath}/MTrainingData_0.csv').set_index(['gid', 'season', 'tid', 'oid'])
             t1 = pd.read_csv(f'{self.datapath}/MTrainingData_1.csv').set_index(['gid', 'season', 'tid', 'oid'])

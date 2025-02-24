@@ -47,26 +47,20 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    datapath = config['dataloader']['datapath']
-    data = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])
-    feats = pd.read_csv(Path(f'{datapath}\\MEncodedData.csv')).set_index(['season', 'tid'])
+    res_dict = {}
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+        for prenorm in [True, False]:
+            fnme = f'MNormalized{method}EncodedData' if prenorm else f'M{method}EncodedData'
+            mdl_name = f"{config['model']['name']}_{fnme}"
+            enc_df = pd.read_csv(f'{config["dataloader"]["datapath"]}/{fnme}.csv').set_index(['season', 'tid'])
 
-    t0, t1 = getMatches(data, feats)
-    results = data['t_score'] - data['o_score'] > 0
+            # Grab predictor model
+            model = Predictor.load_from_checkpoint(
+                Path(f"{config['model']['training']['weights_path']}/{mdl_name}.ckpt"),
+            **config['model'], strict=False)
+            model.eval()
 
-    Xs0, Xt0, Xs1, Xt1, ys, yt = train_test_split(t0, t1, results, test_size=.3)
-
-    rfc = SKLearnWrapper(RandomForestClassifier())
-    rfc.fit(Xs0 - Xs1, ys.values.ravel())
-    rfc_df = runCalcs(100, feats, datapath, rfc, 'sklearn')
-
-    # Grab predictor model
-    model = Predictor.load_from_checkpoint(
-        Path(f"{config['model']['training']['weights_path']}/{config['model']['name']}.ckpt"),
-    **config['model'], strict=False)
-
-    feats = pd.read_csv(Path(f'{datapath}\\MEncodedData.csv')).set_index(['season', 'tid'])
-    model_df = runCalcs(100, feats, datapath, model)
+            res_dict[fnme] = runCalcs(100, enc_df, config["dataloader"]["datapath"], model)
 
 
 
