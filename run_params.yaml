@@ -16,7 +16,7 @@ dataloader:
 
 model:
   name: Predictor
-  init_size: 62
+  init_size: 70
   latent_size: 100
   sigma: 1.
   encode_sz: 15
@@ -28,7 +28,7 @@ model:
   training:
     log_dir: ./logs
     swa_start: .7
-    max_epochs: 500
+    max_epochs: 100
     log_epoch: 50
     weights_path: ./models
     warm_start: False
@@ -38,7 +38,7 @@ model:
 encoder:
   name: Encoder
   init_size: 128
-  latent_size: 62
+  latent_size: 70
   lr: .01
   weight_decay: 0.2
   scheduler_gamma: .99

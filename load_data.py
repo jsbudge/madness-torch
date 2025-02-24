@@ -447,7 +447,7 @@ if __name__ == '__main__':
     # Add in seasonal stats to the avdf frame
     print('Adding seasonal stats to frame...')
     adf[['t_score', 'o_score', 'numot']] = sdf[['t_score', 'o_score', 'numot']]
-    avdf = addSeasonalStatsToFrame(adf, avdf, True)
+
 
     # Save out the files so we can use them later
     if config['load_data']['save_files']:

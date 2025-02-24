@@ -1,8 +1,6 @@
 from typing import Any
-
 import numpy as np
 from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
-from torch.distributions import MultivariateNormal
 import torch
 from pytorch_lightning import LightningModule
 from torch import nn, optim, Tensor
@@ -25,6 +23,8 @@ class Encoder(LightningModule):
 
         self.encoder = nn.Sequential(
             nn.Linear(self.init_size, self.latent_size),
+            nn.SiLU(),
+            nn.Linear(self.latent_size, self.latent_size),
             nn.SiLU(),
             nn.Linear(self.latent_size, self.latent_size),
         )
@@ -101,7 +101,7 @@ class Encoder(LightningModule):
 
 class Predictor(LightningModule):
 
-    def __init__(self, init_size: int = 62, latent_size: int = 62, lr: float = 1e-5, weight_decay: float = 0.0,
+    def __init__(self, init_size: int = 70, latent_size: int = 100, lr: float = 1e-5, weight_decay: float = 0.0,
                  encoded_sz: int = 10, sigma: float = 10., scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args: Any, **kwargs: Any):
         super().__init__()
         self.init_size = init_size

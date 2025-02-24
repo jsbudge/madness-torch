@@ -61,7 +61,9 @@ if __name__ == '__main__':
     rfc_df = runCalcs(100, feats, datapath, rfc, 'sklearn')
 
     # Grab predictor model
-    model = Predictor.load_from_checkpoint(Path(f"{config['model']['training']['weights_path']}/{config['model']['name']}.ckpt"))
+    model = Predictor.load_from_checkpoint(
+        Path(f"{config['model']['training']['weights_path']}/{config['model']['name']}.ckpt"),
+    **config['model'], strict=False)
 
     feats = pd.read_csv(Path(f'{datapath}\\MEncodedData.csv')).set_index(['season', 'tid'])
     model_df = runCalcs(100, feats, datapath, model)

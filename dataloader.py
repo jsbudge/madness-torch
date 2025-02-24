@@ -16,10 +16,10 @@ from load_data import getMatches, normalize
 
 
 class EncoderDataset(Dataset):
-    def __init__(self, datapath: str = './data', split: float = 1., is_val: bool = False, seed: int = 7):
+    def __init__(self, datapath: str = './data', split: float = 1., method: str = 'Averages', is_val: bool = False, seed: int = 7):
         # Load in data
         self.datapath = datapath
-        av_df = pd.read_csv(f'{self.datapath}/MAverages.csv').set_index(['season', 'tid'])
+        av_df = pd.read_csv(Path(f'{self.datapath}/{method}.csv')).set_index(['season', 'tid'])
 
         Xt, Xs, yt, ys = train_test_split(av_df, av_df, test_size=split, random_state=seed)
         self.data = torch.tensor(Xs.values, dtype=torch.float32) if is_val else torch.tensor(Xt.values, dtype=torch.float32)
@@ -44,6 +44,7 @@ class EncoderDataModule(LightningDataModule):
             device: str = 'cpu',
             datapath: str = './data',
             split: float = .7,
+            averaging_method: str = 'Averages',
             **kwargs,
     ):
         super().__init__()
@@ -58,10 +59,11 @@ class EncoderDataModule(LightningDataModule):
         self.device = device
         self.datapath = datapath
         self.split = split
+        self.method = averaging_method
 
     def setup(self, stage: Optional[str] = None) -> None:
-        self.train_dataset = EncoderDataset(self.datapath, self.split)
-        self.val_dataset = EncoderDataset(self.datapath, self.split, is_val=True)
+        self.train_dataset = EncoderDataset(self.datapath, self.split, self.method)
+        self.val_dataset = EncoderDataset(self.datapath, self.split, self.method, is_val=True)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
