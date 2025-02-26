@@ -26,7 +26,7 @@ if __name__ == '__main__':
     report_data = []
 
     # First, run the encoding to try and reduce the dimension of the data
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         for prenorm in [True, False]:
             fnme = f'MNormalized{method}Averages' if prenorm else f'M{method}Averages'
             enc_data = EncoderDataModule(**config['dataloader'], averaging_method=fnme)

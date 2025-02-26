@@ -17,11 +17,11 @@ dataloader:
 model:
   name: Predictor
   init_size: 70
-  latent_size: 100
+  latent_size: 25
   sigma: 1.
-  encode_sz: 15
+  encode_sz: 5
   lr: .00001
-  weight_decay: 0.0
+  weight_decay: 0.4
   scheduler_gamma: .99
   betas: [.9, .99]
   num_samples: 100
@@ -33,7 +33,7 @@ model:
     weights_path: ./models
     warm_start: False
     save_model: True
-    patience: 50
+    patience: 5
 
 encoder:
   name: Encoder

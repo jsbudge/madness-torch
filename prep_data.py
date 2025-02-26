@@ -17,6 +17,12 @@ def col_weight(df, col):
     return df.mul(df_weight, axis=0).groupby(['season', 'tid']).sum().mul(
         1 / df_weight.groupby(['season', 'tid']).sum(), axis=0)
 
+
+def date_weight(df, dates):
+    df_weight = dates['daynum']
+    return df.mul(df_weight, axis=0).groupby(['season', 'tid']).sum().mul(
+        1 / df_weight.groupby(['season', 'tid']).sum(), axis=0)
+
 if __name__ == '__main__':
 
     with open('./run_params.yaml', 'r') as file:
@@ -26,12 +32,18 @@ if __name__ == '__main__':
             print(exc)
 
     datapath = config['dataloader']['datapath']
+    print('Loading dataframes...')
     adf = pd.read_csv(Path(f'{datapath}\\MGameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['daynum']]
+    av_other_df = pd.read_csv(Path(f'{datapath}\\MAverages.csv')).set_index(['season', 'tid'])
+    avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     adf = adf.loc(axis=0)[:, 2004:]
+    bdf = bdf.loc(axis=0)[:, 2004:]
+    print('dataframes loaded.')
 
     # Averaging using various methods over whole dataset, not averages
     # Save these as different datasets for training
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         if method == 'Simple':
             avdf = adf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
@@ -40,15 +52,18 @@ if __name__ == '__main__':
             avdf = col_weight(adf, 'o_elo')
         elif method == 'Rank':
             avdf = gauss_weight(adf, 'rank')
-        avdf = addSeasonalStatsToFrame(adf, avdf, True)
+        elif method == 'Recent':
+            avdf = date_weight(adf, bdf)
         avdf = avdf.drop(columns=['numot'])
         avdf_norm = normalize(avdf, to_season=True)
+        avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/M{method}Averages.csv'))
+        print(f'Saved {method}')
 
     # Averaging using various methods over normalized data
     # Is this significant? Dunno.
     nadf = normalize(adf, to_season=True)
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         if method == 'Simple':
             avdf = nadf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
@@ -57,7 +72,10 @@ if __name__ == '__main__':
             avdf = col_weight(nadf, 'o_elo')
         elif method == 'Rank':
             avdf = gauss_weight(nadf, 'rank')
-        avdf = addSeasonalStatsToFrame(adf, avdf, True)
+        elif method == 'Recent':
+            avdf = date_weight(adf, bdf)
         avdf = avdf.drop(columns=['numot'])
         avdf_norm = normalize(avdf, to_season=True)
+        avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MNormalized{method}Averages.csv'))
+        print(f'Saved {method}')

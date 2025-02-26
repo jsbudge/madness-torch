@@ -414,6 +414,8 @@ if __name__ == '__main__':
 
     adf.loc[joiner_df.index, ['t_elo', 'o_elo']] = joiner_df[['t_elo', 'o_elo']]
     adf.loc[np.isnan(adf['t_elo']), ['t_elo', 'o_elo']] = joiner_df[['o_elo', 't_elo']].values
+
+    avdf[['t_elo', 'o_elo']] = adf[['t_elo', 'o_elo']].groupby(['season', 'tid']).mean()
     # Run Glicko ratings
 
     # Consolidate massey ordinals in a logical way
@@ -443,10 +445,29 @@ if __name__ == '__main__':
     ind_1 = adf.reset_index().drop_duplicates(subset=['gid'], keep='last').set_index(['gid', 'season', 'tid', 'oid']).index
     adf.loc[ind_0, 'o_rank'] = adf.loc[ind_1, 't_rank'].values
     adf.loc[ind_1, 'o_rank'] = adf.loc[ind_0, 't_rank'].values
+    avdf[['t_rank', 'o_rank']] = adf[['t_rank', 'o_rank']].groupby(['season', 'tid']).mean()
+
+    adf[['t_score', 'o_score', 'numot']] = sdf[['t_score', 'o_score', 'numot']]
 
     # Add in seasonal stats to the avdf frame
     print('Adding seasonal stats to frame...')
-    adf[['t_score', 'o_score', 'numot']] = sdf[['t_score', 'o_score', 'numot']]
+    avdf = addSeasonalStatsToFrame(adf, avdf, True)
+
+    print('Adding conference stats to frame...')
+    conf = pd.read_csv(Path(f"{config['load_data']['data_path']}/MTeamConferences.csv"))
+    conf = conf.rename(columns={'TeamID': 'tid', 'Season': 'season'})
+    # conf = conf.set_index(['Season', 'TID'])
+    cj_df = conf.set_index(['season', 'tid']).join(avdf[['t_elo', 't_rank']])
+    # Set mean
+    conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).mean(), on=['season', 'ConfAbbrev'])
+    conf = conf.rename(columns={'t_elo': 'conf_meanelo', 't_rank': 'conf_meanrank'})
+    # Set max
+    conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).max(), on=['season', 'ConfAbbrev'])
+    conf = conf.rename(columns={'t_elo': 'conf_maxelo', 't_rank': 'conf_minrank'})
+    # Set min
+    conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).min(), on=['season', 'ConfAbbrev'])
+    conf = conf.rename(columns={'t_elo': 'conf_minelo', 't_rank': 'conf_maxrank'})
+    avdf = avdf.merge(conf, on=['season', 'tid']).drop(columns=['ConfAbbrev']).set_index(['season', 'tid'])
 
 
     # Save out the files so we can use them later

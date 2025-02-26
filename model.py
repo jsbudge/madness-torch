@@ -116,26 +116,12 @@ class Predictor(LightningModule):
         self.e_sz = encoded_sz
         self.sigma = sigma
 
-        self.encoder_games = nn.Sequential(
-            nn.Linear(self.encoded_size, self.latent_size),
-            nn.SiLU(),
-            nn.Linear(self.latent_size, self.latent_size),
-            nn.SiLU(),
-        )
-
         self.apply_opp = nn.Sequential(
+            nn.Linear(self.encoded_size * 2, self.latent_size),
+            nn.SiLU(),
             nn.Linear(self.latent_size, self.output_size),
             nn.Sigmoid()
         )
-
-        dnn_to_bnn(self.encoder_games, bnn_prior_parameters={
-            "prior_mu": 0.0,
-            "prior_sigma": 1.0,
-            "posterior_mu_init": 0.0,
-            "posterior_rho_init": -4.0,
-            "type": "Reparameterization",  # Flipout or Reparameterization
-            "moped_enable": False,
-        })
 
         dnn_to_bnn(self.apply_opp, bnn_prior_parameters={
             "prior_mu": 0.0,
@@ -146,14 +132,10 @@ class Predictor(LightningModule):
             "moped_enable": False,
         })
 
-    def encode(self, x):
-        ex = positional_encoding(x, self.sigma, self.e_sz)
-        return self.encoder_games(ex)
-
     def forward(self, x, y):
-        x = self.encode(x)
-        y = self.encode(y)
-        x = self.apply_opp(x - y)
+        ex = positional_encoding(x, self.sigma, self.e_sz)
+        ey = positional_encoding(y, self.sigma, self.e_sz)
+        x = self.apply_opp(torch.cat([ex, ey], dim=-1))
         return x
 
     def loss_function(self, y, y_pred):
@@ -210,36 +192,36 @@ class Predictor(LightningModule):
         return train_loss
 
 
-class EncodePDF(LightningModule):
+class GameSequencePredictor(LightningModule):
 
-    def __init__(self, inp_sz: int = 256, latent: int = 22, depth: int = 3):
+    def __init__(self, inp_sz: int = 256, latent: int = 22, in_channels: int = 5):
         super().__init__()
-        self.linear_layer = nn.Sequential(
-            nn.Linear(inp_sz, inp_sz),
-            nn.GELU(),
+        self.encoding_layer = nn.Sequential(
             nn.Linear(inp_sz, latent),
             nn.GELU(),
-        )
-        self.conv_layer = nn.Sequential(
-            nn.Conv1d(1, depth, 1, 1, 0),
+            nn.Conv1d(in_channels, in_channels, 1, 1, 0),
             nn.GELU(),
-            nn.Conv1d(depth, depth, 1, 1, 0),
+            nn.Conv1d(in_channels, 1, 1, 1, 0),
+            nn.GELU(),
+            nn.Linear(latent, latent),
         )
 
-        self.mu_layer = nn.Sequential(
-            nn.Linear(latent, latent),
+        self.classifier = nn.Sequential(
+            nn.Linear(latent * 2, latent),
             nn.GELU(),
             nn.Linear(latent, latent),
+            nn.GELU(),
+            nn.Linear(latent, 1),
+            nn.Sigmoid()
         )
 
         self.latent = latent
 
-    def forward(self, x):
-        x = self.linear_layer(x)
-        mu = self.mu_layer(x)
-        x = self.conv_layer(x.view(-1, 1, self.latent))
-
-        return mu, torch.bmm(x.mT, x)
+    def forward(self, x, y):
+        x = self.encoding_layer(x)
+        y = self.encoding_layer(y)
+        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1)], dim=-1))
+        return x
 
 
 def positional_encoding(

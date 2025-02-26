@@ -48,7 +48,7 @@ if __name__ == '__main__':
             print(exc)
 
     res_dict = {}
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         for prenorm in [True, False]:
             fnme = f'MNormalized{method}EncodedData' if prenorm else f'M{method}EncodedData'
             mdl_name = f"{config['model']['name']}_{fnme}"

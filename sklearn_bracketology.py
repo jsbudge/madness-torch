@@ -36,7 +36,7 @@ if __name__ == '__main__':
     tdata = prepFrame(tdata, False).loc(axis=0)[:, 2004:]
     method_results = pd.DataFrame(index=tdata.index, columns=['Truth'], data=tdata['t_score'] - tdata['o_score'] > 0).astype(np.float32)
 
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         for prenorm in [True, False]:
             fnme = f'MNormalized{method}Averages' if prenorm else f'M{method}Averages'
             print(f'Running {fnme}...')
