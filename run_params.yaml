@@ -55,3 +55,24 @@ encoder:
     save_model: True
     patience: 50
 
+seq_predictor:
+  name: GamePredictor
+  init_size: 70
+  latent_size: 45
+  in_channels: 5
+  sigma: 1.
+  encode_sz: 5
+  lr: .00001
+  weight_decay: 0.05
+  scheduler_gamma: .99
+  betas: [.9, .99]
+  num_samples: 100
+  training:
+    log_dir: ./logs
+    swa_start: .7
+    max_epochs: 100
+    log_epoch: 50
+    weights_path: ./models
+    warm_start: False
+    save_model: True
+    patience: 5

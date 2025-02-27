@@ -1,8 +1,12 @@
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
-from load_data import addSeasonalStatsToFrame, normalize
+from sklearn.preprocessing import OneHotEncoder
+from tqdm import tqdm
+from load_data import addSeasonalStatsToFrame, normalize, prepFrame
+import torch
 
 
 def gauss_weight(df, col, sigma=None):
@@ -34,16 +38,16 @@ if __name__ == '__main__':
     datapath = config['dataloader']['datapath']
     print('Loading dataframes...')
     adf = pd.read_csv(Path(f'{datapath}\\MGameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
-    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['daynum']]
+    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum']]
     av_other_df = pd.read_csv(Path(f'{datapath}\\MAverages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
-    adf = adf.loc(axis=0)[:, 2004:]
+    adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0)
     bdf = bdf.loc(axis=0)[:, 2004:]
     print('dataframes loaded.')
 
     # Averaging using various methods over whole dataset, not averages
     # Save these as different datasets for training
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
+    '''for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         if method == 'Simple':
             avdf = adf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
@@ -54,7 +58,6 @@ if __name__ == '__main__':
             avdf = gauss_weight(adf, 'rank')
         elif method == 'Recent':
             avdf = date_weight(adf, bdf)
-        avdf = avdf.drop(columns=['numot'])
         avdf_norm = normalize(avdf, to_season=True)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/M{method}Averages.csv'))
@@ -74,8 +77,58 @@ if __name__ == '__main__':
             avdf = gauss_weight(nadf, 'rank')
         elif method == 'Recent':
             avdf = date_weight(adf, bdf)
-        avdf = avdf.drop(columns=['numot'])
         avdf_norm = normalize(avdf, to_season=True)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MNormalized{method}Averages.csv'))
-        print(f'Saved {method}')
+        print(f'Saved {method}')'''
+
+    # Build dataset for training averaging method using last 5 games
+    onehot = OneHotEncoder(sparse_output=False)
+    han = onehot.fit_transform(bdf[['gloc']])
+    adf = normalize(adf)
+    adf['daynum'] = bdf['daynum']
+    adf[['home', 'away', 'neutral']] = han
+    adf = adf.reset_index().set_index(['gid', 'season', 'tid', 'oid', 'daynum']).sort_index()
+    # target = adf['t_score'] - adf['o_score'] > 0
+    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+        season_path = Path(f'{config["load_data"]["save_path"]}/{season}')
+        if not season_path.exists():
+            os.mkdir(season_path)
+        sadf = adf.loc(axis=0)[:, season]
+        for idx, row in tqdm(sadf.iterrows()):
+            t_games = sadf.loc(axis=0)[:, :, idx[2], :, :idx[4]]
+            o_games = sadf.loc(axis=0)[:, :, idx[3], :, :idx[4]]
+            if t_games.shape[0] < 6 or o_games.shape[0] < 6:
+                continue
+            t_hist = torch.tensor(t_games.iloc[-6:-1].values, dtype=torch.float32)
+            o_hist = torch.tensor(o_games.iloc[-6:-1].values, dtype=torch.float32)
+            target_hist = torch.tensor(row[['home', 'away', 'neutral']].values, dtype=torch.float32)
+            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
+                continue
+            torch.save([t_hist, o_hist, target_hist, np.float32(row['t_score'] > row['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+
+    # Apply same logic to tournament data
+    tdf = prepFrame(pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv')))
+    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+        season_path = Path(f'{config["load_data"]["save_path"]}/t{season}')
+        if not season_path.exists():
+            os.mkdir(season_path)
+        try:
+            stdf = tdf.loc(axis=0)[:, season]
+        except KeyError:
+            print('Missing a season.')
+            continue
+        for idx, row in tqdm(stdf.iterrows()):
+            t_games = adf.loc(axis=0)[:, season, idx[2]]
+            o_games = adf.loc(axis=0)[:, season, idx[3]]
+            if t_games.shape[0] < 6 or o_games.shape[0] < 6:
+                continue
+            t_hist = torch.tensor(t_games.iloc[-6:-1].values, dtype=torch.float32)
+            o_hist = torch.tensor(o_games.iloc[-6:-1].values, dtype=torch.float32)
+            target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
+            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
+                continue
+            torch.save([t_hist, o_hist, target_hist, np.float32(row['t_score'] > row['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+
+
+

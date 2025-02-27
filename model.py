@@ -194,34 +194,100 @@ class Predictor(LightningModule):
 
 class GameSequencePredictor(LightningModule):
 
-    def __init__(self, inp_sz: int = 256, latent: int = 22, in_channels: int = 5):
+    def __init__(self, init_size: int = 256, latent_size: int = 22, in_channels: int = 5, lr: float = 1e-5, weight_decay: float = 0.0,
+                 encoded_sz: int = 10, sigma: float = 10., scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args, **kwargs):
         super().__init__()
+        self.init_size = init_size
+        self.latent_size = latent_size
+        self.output_size = 1
+        self.automatic_optimization = False
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.scheduler_gamma = scheduler_gamma
+        self.betas = betas
+        self.encoded_size = self.init_size * 2 * encoded_sz
+        self.e_sz = encoded_sz
+        self.sigma = sigma
         self.encoding_layer = nn.Sequential(
-            nn.Linear(inp_sz, latent),
-            nn.GELU(),
+            nn.Linear(self.encoded_size, latent_size),
+            nn.SiLU(),
+            nn.Dropout(.25),
             nn.Conv1d(in_channels, in_channels, 1, 1, 0),
-            nn.GELU(),
+            nn.SiLU(),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
-            nn.GELU(),
-            nn.Linear(latent, latent),
+            nn.SiLU(),
+            nn.Linear(latent_size, latent_size),
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(latent * 2, latent),
-            nn.GELU(),
-            nn.Linear(latent, latent),
-            nn.GELU(),
-            nn.Linear(latent, 1),
+            nn.Linear(latent_size * 2 + 3, latent_size),
+            nn.SiLU(),
+            nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
 
-        self.latent = latent
+        self.latent = latent_size
 
-    def forward(self, x, y):
+    def forward(self, x, y, loc):
+        x = positional_encoding(x, self.sigma, self.e_sz)
+        y = positional_encoding(y, self.sigma, self.e_sz)
         x = self.encoding_layer(x)
         y = self.encoding_layer(y)
-        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1)], dim=-1))
-        return x
+        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1), loc], dim=-1))
+        return x.squeeze(1)
+
+    def loss_function(self, y, y_pred):
+        return tf.binary_cross_entropy(y, y_pred)
+
+    def on_fit_start(self) -> None:
+        if self.trainer.is_global_zero and self.logger:
+            self.logger.log_graph(self, self.example_input_array)
+
+    def training_step(self, batch, batch_idx):
+        opt = self.optimizers()
+        train_loss = self.train_val_get(batch, batch_idx)
+        opt.zero_grad()
+        self.manual_backward(train_loss, retain_graph=True)
+        opt.step()
+
+    def validation_step(self, batch, batch_idx):
+        self.train_val_get(batch, batch_idx, 'val')
+
+    def on_train_epoch_end(self) -> None:
+        sch = self.lr_schedulers()
+
+        # If the selected scheduler is a ReduceLROnPlateau scheduler.
+        if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            sch.step(self.trainer.callback_metrics["val_loss"])
+        else:
+            sch.step()
+
+    def on_validation_epoch_end(self) -> None:
+        self.log('lr', self.lr_schedulers().get_last_lr()[0], prog_bar=True, rank_zero_only=True)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.parameters(),
+                                      lr=self.lr,
+                                      weight_decay=self.weight_decay,
+                                      betas=self.betas,
+                                      eps=1e-7)
+        if self.scheduler_gamma is None:
+            return optimizer
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=self.scheduler_gamma)
+        '''scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, cooldown=self.params['step_size'],
+                                                         factor=self.params['scheduler_gamma'], threshold=1e-5)'''
+
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+
+    def train_val_get(self, batch, batch_idx, kind='train'):
+        team, opp, loc, targets = batch
+
+        results = self.forward(team, opp, loc)
+        train_loss = self.loss_function(results, targets)
+
+        self.log_dict({f'{kind}_loss': train_loss}, on_epoch=True,
+                      prog_bar=True, rank_zero_only=True)
+        return train_loss
 
 
 def positional_encoding(

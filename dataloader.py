@@ -83,42 +83,67 @@ class EncoderDataModule(LightningDataModule):
 
 
 class GameDataset(Dataset):
-    def __init__(self, datapath: str = './data', split: float = 1., file: DataFrame = None, is_val: bool = False, seed: int = 7):
+    def __init__(self, datapath: str = './data', is_val: bool = False, seed: int = 7):
         # Load in data
         self.datapath = datapath
-        if not is_val:
-            data = pd.read_csv(f'{self.datapath}/MGameDataAdv.csv').set_index(['gid', 'season', 'tid', 'oid']).sort_index()
-            rdata = pd.read_csv(f'{self.datapath}/MGameDataBasic.csv').set_index(['gid', 'season', 'tid', 'oid']).sort_index()
-            results = pd.DataFrame(data=(rdata['t_score'] - rdata['o_score']) > 0)
-        else:
-            data = pd.read_csv(f'{self.datapath}/MNCAATourneyCompactResults.csv')
-            data = prepFrame(data, True)
-            results = pd.DataFrame(data=(data['t_score'] - data['o_score']) > 0)
-        if file is None:
-            t0 = pd.read_csv(f'{self.datapath}/MTrainingData_0.csv').set_index(['gid', 'season', 'tid', 'oid'])
-            t1 = pd.read_csv(f'{self.datapath}/MTrainingData_1.csv').set_index(['gid', 'season', 'tid', 'oid'])
-        else:
-            t0, t1, = getMatches(results, file, diff=False)
-
-        '''if split < 1:
-            Xs0, Xt0, Xs1, Xt1, ys, yt = train_test_split(t0, t1, results, test_size=split, random_state=seed)
-        else:'''
-        Xt0 = t0
-        Xs0 = t0
-        Xt1 = t1
-        Xs1 = t1
-        ys = results
-        yt = results
-        self.d0 = torch.tensor(Xt0.values, dtype=torch.float32) if is_val else torch.tensor(Xs0.values, dtype=torch.float32)
-        self.d1 = torch.tensor(Xt1.values, dtype=torch.float32) if is_val else torch.tensor(Xs1.values, dtype=torch.float32)
-        self.labels = torch.tensor(yt.values, dtype=torch.float32) if is_val else torch.tensor(ys.values, dtype=torch.float32)
-        self.data_len = self.d0.shape[1]
+        self.data = []
+        for season in range(2004, 2025):
+            dp = f'{datapath}/{season}' if not is_val else f'{datapath}/t{season}'
+            if Path(f'{datapath}/{season}').exists():
+                self.data.append(glob(f'{dp}/*.pt'))
+        self.data = np.concatenate(self.data)
+        check = torch.load(self.data[0])
+        self.data_len = check[0].shape[-1]
 
     def __getitem__(self, idx):
-        return self.d0[idx], self.d1[idx], self.labels[idx]
+        return torch.load(self.data[idx])
 
     def __len__(self):
-        return self.d0.shape[0]
+        return self.data.shape[0]
+
+
+class GameDataModule(LightningDataModule):
+    def __init__(
+            self,
+            train_batch_size: int = 8,
+            val_batch_size: int = 8,
+            pin_memory: bool = False,
+            single_example: bool = False,
+            device: str = 'cpu',
+            datapath: str = './data',
+            **kwargs,
+    ):
+        super().__init__()
+
+        self.val_dataset = None
+        self.train_dataset = None
+        self.train_batch_size = train_batch_size
+        self.val_batch_size = val_batch_size
+        self.num_workers = 0  # cpu_count() // 2
+        self.pin_memory = pin_memory
+        self.single_example = single_example
+        self.device = device
+        self.datapath = datapath
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        self.train_dataset = GameDataset(self.datapath)
+        self.val_dataset = GameDataset(self.datapath, is_val=True)
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.train_dataset,
+            batch_size=self.train_batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )
+
+    def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
+        return DataLoader(
+            self.val_dataset,
+            batch_size=self.val_batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+        )
 
 
 class PredictorDataset(Dataset):
