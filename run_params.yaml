@@ -5,11 +5,12 @@ load_data:
   save_path: D:\\madness_data\data  # This should usually be the same as the data_path
   save_files: False
   run_elo_opt: False
+  run_rank_opt: True
 
 dataloader:
   datapath: D:\\madness_data\data
-  train_batch_size: 32
-  val_batch_size: 32
+  train_batch_size: 128
+  val_batch_size: 128
   split: .7
   single_example: False
   pin_memory: False
@@ -40,8 +41,8 @@ encoder:
   init_size: 128
   latent_size: 70
   lr: .01
-  weight_decay: 0.2
-  scheduler_gamma: .99
+  weight_decay: 0.3
+  scheduler_gamma: .9
   betas: [.9, .99]
   num_samples: 100
   run_train: False
@@ -58,19 +59,19 @@ encoder:
 seq_predictor:
   name: GamePredictor
   init_size: 70
-  latent_size: 45
+  latent_size: 15
   in_channels: 5
-  sigma: 1.
+  sigma: 10.
   encode_sz: 5
   lr: .00001
-  weight_decay: 0.05
-  scheduler_gamma: .99
+  weight_decay: 0.005
+  scheduler_gamma: .9
   betas: [.9, .99]
   num_samples: 100
   training:
     log_dir: ./logs
     swa_start: .7
-    max_epochs: 100
+    max_epochs: 50
     log_epoch: 50
     weights_path: ./models
     warm_start: False

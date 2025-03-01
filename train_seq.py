@@ -1,3 +1,6 @@
+from glob import glob
+from pathlib import Path
+
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, loggers, seed_everything
@@ -31,7 +34,7 @@ if __name__ == '__main__':
     config['seq_predictor']['init_size'] = data.train_dataset.data_len
     mdl_name = f"{config['seq_predictor']['name']}"
     model = GameSequencePredictor(**config['seq_predictor'])
-    logger = loggers.TensorBoardLogger(config['seq_predictor']['training']['log_dir'], version=0, name=mdl_name)
+    logger = loggers.TensorBoardLogger(config['seq_predictor']['training']['log_dir'], name=mdl_name)
     expected_lr = max((config['seq_predictor']['lr'] * config['seq_predictor']['scheduler_gamma'] ** (config['seq_predictor']['training']['max_epochs'] *
                                                                 config['seq_predictor']['training']['swa_start'])), 1e-9)
     trainer = Trainer(logger=logger, max_epochs=config['seq_predictor']['training']['max_epochs'],
@@ -59,9 +62,31 @@ if __name__ == '__main__':
     if config['seq_predictor']['training']['save_model']:
         trainer.save_checkpoint(f"{config['seq_predictor']['training']['weights_path']}/{mdl_name}.ckpt")
 
-    t0, t1, label = next(iter(data.train_dataloader()))
+    start = 2004
+    end = 2024
+    datapath = config['dataloader']['datapath']
+    results = pd.DataFrame()
+    for season in tqdm(range(start, end)):
+        dp = f'{datapath}/t{season}'
+        if Path(f'{datapath}/{season}').exists():
+            files = glob(f'{dp}/*.pt')
+            if len(files) > 0:
+                ch_d = [torch.load(g) for g in files]
+                t_data = torch.cat([c[0].unsqueeze(0) for c in ch_d], dim=0)
+                o_data = torch.cat([c[1].unsqueeze(0) for c in ch_d], dim=0)
+                locs = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
+                targets = np.array([c[3] for c in ch_d])
+                predictions = model(t_data, o_data, locs).detach().numpy()
 
-    check = model(t0.to(model.device), t1.to(model.device))
-    check = np.concatenate((check.cpu().data.numpy(), label.cpu().data.numpy()), axis=-1)
+                file_data = [Path(c).stem for c in files]
+                gid = [int(c.split('_')[0]) for c in file_data]
+                tid = [int(c.split('_')[1]) for c in file_data]
+                oid = [int(c.split('_')[2]) for c in file_data]
+                seas = [season for _ in file_data]
+                results = pd.concat((results,
+                                     pd.DataFrame(data=np.stack([gid, seas, tid, oid, predictions, targets]).T,
+                                                  columns=['gid', 'season', 'tid', 'oid', 'pred', 'truth'])))
+    results = results.set_index(['gid', 'season', 'tid', 'oid'])
+
 
 

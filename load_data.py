@@ -430,6 +430,8 @@ if __name__ == '__main__':
     adf[['t_rank', 'o_rank']] = 0.
 
     print('Running ranking consolidation...')
+    if config['load_data']['run_rank_opt']:
+        av_acc = dict(zip(ord_df.columns, np.zeros(ord_df.shape[1])))
     for t in tqdm(tids):
         t_ords = ord_df.loc[:, t, :]
         ord_id_local = ord_id.loc[np.logical_or(ord_id['TeamID'] == t, ord_id['oid'] == t)].set_index(['Season', 'RankingDayNum'])

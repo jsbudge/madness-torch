@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.decomposition import TruncatedSVD
 from tqdm import tqdm
 from load_data import addSeasonalStatsToFrame, normalize, prepFrame
 import torch
@@ -38,7 +39,7 @@ if __name__ == '__main__':
     datapath = config['dataloader']['datapath']
     print('Loading dataframes...')
     adf = pd.read_csv(Path(f'{datapath}\\MGameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
-    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum']]
+    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
     av_other_df = pd.read_csv(Path(f'{datapath}\\MAverages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0)
@@ -82,13 +83,21 @@ if __name__ == '__main__':
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MNormalized{method}Averages.csv'))
         print(f'Saved {method}')'''
 
+    # Run SVD to get noise out of the values
+    adf = normalize(adf)
+    check_tsvd = TruncatedSVD(n_components=adf.shape[1])
+    check_tsvd.fit(adf)
+    n_true = sum(check_tsvd.singular_values_ > 1e-3)
+    tsvd = TruncatedSVD(n_components=n_true)
+    adf = normalize(pd.DataFrame(index=adf.index, data=tsvd.fit_transform(adf)))
+
     # Build dataset for training averaging method using last 5 games
     onehot = OneHotEncoder(sparse_output=False)
     han = onehot.fit_transform(bdf[['gloc']])
-    adf = normalize(adf)
     adf['daynum'] = bdf['daynum']
     adf[['home', 'away', 'neutral']] = han
     adf = adf.reset_index().set_index(['gid', 'season', 'tid', 'oid', 'daynum']).sort_index()
+    bdf = bdf.reset_index().set_index(['gid', 'season', 'tid', 'oid', 'daynum']).sort_index()
     # target = adf['t_score'] - adf['o_score'] > 0
     for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/{season}')
@@ -96,6 +105,7 @@ if __name__ == '__main__':
             os.mkdir(season_path)
         sadf = adf.loc(axis=0)[:, season]
         for idx, row in tqdm(sadf.iterrows()):
+            res = bdf.loc[idx]
             t_games = sadf.loc(axis=0)[:, :, idx[2], :, :idx[4]]
             o_games = sadf.loc(axis=0)[:, :, idx[3], :, :idx[4]]
             if t_games.shape[0] < 6 or o_games.shape[0] < 6:
@@ -105,7 +115,7 @@ if __name__ == '__main__':
             target_hist = torch.tensor(row[['home', 'away', 'neutral']].values, dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
-            torch.save([t_hist, o_hist, target_hist, np.float32(row['t_score'] > row['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+            torch.save([t_hist, o_hist, target_hist, np.float32(res['t_score'] > res['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
     # Apply same logic to tournament data
     tdf = prepFrame(pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv')))
@@ -123,8 +133,8 @@ if __name__ == '__main__':
             o_games = adf.loc(axis=0)[:, season, idx[3]]
             if t_games.shape[0] < 6 or o_games.shape[0] < 6:
                 continue
-            t_hist = torch.tensor(t_games.iloc[-6:-1].values, dtype=torch.float32)
-            o_hist = torch.tensor(o_games.iloc[-6:-1].values, dtype=torch.float32)
+            t_hist = torch.tensor(t_games.iloc[-5:].values, dtype=torch.float32)
+            o_hist = torch.tensor(o_games.iloc[-5:].values, dtype=torch.float32)
             target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
