@@ -59,19 +59,19 @@ encoder:
 seq_predictor:
   name: GamePredictor
   init_size: 70
-  latent_size: 15
+  latent_size: 12
   in_channels: 5
-  sigma: 10.
-  encode_sz: 5
-  lr: .00001
-  weight_decay: 0.005
+  sigma: 1.
+  encode_sz: 3
+  lr: .001
+  weight_decay: 0.05
   scheduler_gamma: .9
   betas: [.9, .99]
   num_samples: 100
   training:
     log_dir: ./logs
     swa_start: .7
-    max_epochs: 50
+    max_epochs: 150
     log_epoch: 50
     weights_path: ./models
     warm_start: False

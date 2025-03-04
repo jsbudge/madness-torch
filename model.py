@@ -209,20 +209,29 @@ class GameSequencePredictor(LightningModule):
         self.e_sz = encoded_sz
         self.sigma = sigma
         self.encoding_layer = nn.Sequential(
-            nn.Linear(self.encoded_size, latent_size),
-            nn.SiLU(),
+            nn.Conv1d(in_channels, in_channels, 1, 1, 0),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
-            nn.SiLU(),
-            nn.Dropout(.25),
-            nn.Linear(latent_size, latent_size),
+            nn.GELU(),
+            nn.Dropout(.5),
+            nn.Linear(self.encoded_size, latent_size),
+            nn.Tanh(),
         )
 
         self.classifier = nn.Sequential(
             nn.Linear(latent_size * 2 + 3, latent_size),
-            nn.SiLU(),
+            nn.Tanh(),
             nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
+
+        dnn_to_bnn(self.classifier, bnn_prior_parameters={
+            "prior_mu": 0.0,
+            "prior_sigma": 1.0,
+            "posterior_mu_init": 0.0,
+            "posterior_rho_init": -4.0,
+            "type": "Reparameterization",  # Flipout or Reparameterization
+            "moped_enable": False,
+        })
 
         self.latent = latent_size
 
