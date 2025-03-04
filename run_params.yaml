@@ -61,9 +61,9 @@ seq_predictor:
   init_size: 70
   latent_size: 12
   in_channels: 5
-  sigma: 1.
-  encode_sz: 3
-  lr: .001
+  sigma: 10.
+  encode_sz: 10
+  lr: .00001
   weight_decay: 0.05
   scheduler_gamma: .9
   betas: [.9, .99]
