@@ -107,24 +107,31 @@ class Game(NodeMixin):
 
 
 class Bracket(object):
+    _root: Game
+    node_dict: dict
 
     def __init__(self, root_node_id=None):
         nd = Game(root_node_id, round=6)
-        self.root = nd
+        self._root = nd
         if root_node_id is not None:
             self.node_dict = {root_node_id: nd}
         else:
             self.node_dict = {}
 
-    def addRoot(self, nd):
-        self.root = nd
+    @property
+    def root(self):
+        return self._root
+
+    @root.setter
+    def root(self, nd):
+        self._root = nd
         self.node_dict['root'] = nd
 
     def addGame(self, parent_id, nd_id):
         nd = Game(nd_id, parent=self.node_dict[parent_id], round=self.node_dict[parent_id].round - 1)
         self.node_dict[nd.id] = nd
 
-    def addData(self, data):
+    def addData(self, data: pd.DataFrame):
         rnds = self.getRounds()
         for r in rnds:
             for gm in r:

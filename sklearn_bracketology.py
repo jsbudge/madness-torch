@@ -29,34 +29,29 @@ if __name__ == '__main__':
             print(exc)
 
     datapath = config['dataloader']['datapath']
-    data = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    data = pd.read_csv(Path(f'{datapath}\\GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])
     data = data.loc(axis=0)[:, 2004:]
     results = data['t_score'] - data['o_score'] > 0
     tdata = pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv'))
+    tdata = pd.concat((tdata, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))))
     tdata = prepFrame(tdata, False).loc(axis=0)[:, 2004:]
     method_results = pd.DataFrame(index=tdata.index, columns=['Truth'], data=tdata['t_score'] - tdata['o_score'] > 0).astype(np.float32)
 
     for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
         for prenorm in [True, False]:
-            fnme = f'MNormalized{method}Averages' if prenorm else f'M{method}Averages'
+            fnme = f'Normalized{method}Averages' if prenorm else f'{method}Averages'
             print(f'Running {fnme}...')
             feats = pd.read_csv(Path(f'{datapath}\\{fnme}.csv')).set_index(['season', 'tid'])
 
-            method_results = runEstimator(feats, fnme[1:], method_results)
-            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
+            method_results = runEstimator(feats, fnme, method_results)
+            method_results.to_csv(Path(f'{datapath}\\NCAASklearnResults.csv'))
 
             # Truncated SVD
             tsvd = TruncatedSVD(n_components=60)
             trans_feats = pd.DataFrame(data=tsvd.fit_transform(feats), index=feats.index)
 
-            method_results = runEstimator(trans_feats, f'TSVD_{fnme[1:]}', method_results)
-            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
+            method_results = runEstimator(trans_feats, f'TSVD_{fnme}', method_results)
+            method_results.to_csv(Path(f'{datapath}\\NCAASklearnResults.csv'))
 
-            fnme = f'MNormalized{method}EncodedData' if prenorm else f'M{method}EncodedData'
-            print(f'Running {fnme}...')
-            feats = pd.read_csv(Path(f'{datapath}\\{fnme}.csv')).set_index(['season', 'tid'])
-            method_results = runEstimator(feats, fnme[1:], method_results)
-            method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
-
-    method_results.to_csv(Path(f'{datapath}\\MNCAASklearnResults.csv'))
+    method_results.to_csv(Path(f'{datapath}\\NCAASklearnResults.csv'))
 

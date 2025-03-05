@@ -90,12 +90,13 @@ class GameDataset(Dataset):
         start = 2004
         end = 2025
         for season in range(start, end):
-            dp = f'{datapath}/{season}'#  if not is_val else f'{datapath}/t{season}'
+            dp = f'{datapath}/{season}' if not is_val else f'{datapath}/t{season}'
             if Path(f'{datapath}/{season}').exists():
                 self.data.append(glob(f'{dp}/*.pt'))
         self.data = np.concatenate(self.data)
-        Xt, Xs = train_test_split(self.data, random_state=seed)
-        self.data = Xs if is_val else Xt
+        np.random.shuffle(self.data)
+        # Xt, Xs = train_test_split(self.data, random_state=seed)
+        # self.data = Xs if is_val else Xt
         check = torch.load(self.data[0])
         self.data_len = check[0].shape[-1]
 

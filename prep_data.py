@@ -38,9 +38,9 @@ if __name__ == '__main__':
 
     datapath = config['dataloader']['datapath']
     print('Loading dataframes...')
-    adf = pd.read_csv(Path(f'{datapath}\\MGameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
-    bdf = pd.read_csv(Path(f'{datapath}\\MGameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
-    av_other_df = pd.read_csv(Path(f'{datapath}\\MAverages.csv')).set_index(['season', 'tid'])
+    adf = pd.read_csv(Path(f'{datapath}\\GameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    bdf = pd.read_csv(Path(f'{datapath}\\GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
+    av_other_df = pd.read_csv(Path(f'{datapath}\\Averages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0)
     bdf = bdf.loc(axis=0)[:, 2004:]
@@ -48,40 +48,36 @@ if __name__ == '__main__':
 
     # Averaging using various methods over whole dataset, not averages
     # Save these as different datasets for training
-    '''for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         if method == 'Simple':
             avdf = adf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
             avdf = gauss_weight(adf, 'elo')
         elif method == 'Elo':
             avdf = col_weight(adf, 'o_elo')
-        elif method == 'Rank':
-            avdf = gauss_weight(adf, 'rank')
         elif method == 'Recent':
             avdf = date_weight(adf, bdf)
         avdf_norm = normalize(avdf, to_season=True)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
-        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/M{method}Averages.csv'))
+        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/{method}Averages.csv'))
         print(f'Saved {method}')
 
     # Averaging using various methods over normalized data
     # Is this significant? Dunno.
     nadf = normalize(adf, to_season=True)
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         if method == 'Simple':
             avdf = nadf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
             avdf = gauss_weight(nadf, 'elo')
         elif method == 'Elo':
             avdf = col_weight(nadf, 'o_elo')
-        elif method == 'Rank':
-            avdf = gauss_weight(nadf, 'rank')
         elif method == 'Recent':
             avdf = date_weight(adf, bdf)
         avdf_norm = normalize(avdf, to_season=True)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
-        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MNormalized{method}Averages.csv'))
-        print(f'Saved {method}')'''
+        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Normalized{method}Averages.csv'))
+        print(f'Saved {method}')
 
     # Run SVD to get noise out of the values
     adf = normalize(adf)
@@ -118,7 +114,8 @@ if __name__ == '__main__':
             torch.save([t_hist, o_hist, target_hist, np.float32(res['t_score'] > res['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
     # Apply same logic to tournament data
-    tdf = prepFrame(pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv')))
+    tdf = pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv'))
+    tdf = prepFrame(pd.concat((tdf, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))), ignore_index=True))
     for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/t{season}')
         if not season_path.exists():

@@ -64,7 +64,7 @@ def getMatches(gids: DataFrame, team_feats: DataFrame, season: int = None, diff:
             return g1, g2
 
 
-def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None):
+def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None, gender='M'):
     """
     Gets the possible matches in any season of all the teams in the tournament.
     :param use_seed: If True, only gets the tournament participants. Otherwise uses every team that's played that season
@@ -74,9 +74,9 @@ def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None)
     :return: Returns either one frame or two, based on diff parameter, of game features.
     """
     if use_seed:
-        sd = pd.read_csv(f'{datapath}/MNCAATourneySeeds.csv')
+        sd = pd.read_csv(f'{datapath}/{gender}NCAATourneySeeds.csv')
     else:
-        sd = pd.read_csv(f'{datapath}/MRegularSeasonCompactResults.csv')
+        sd = pd.read_csv(f'{datapath}/{gender}RegularSeasonCompactResults.csv')
     sd = sd.loc[sd['Season'] == season]['TeamID'].values
     teams = list(set(sd))
     matches = [[x, y] for (x, y) in permutations(teams, 2)]
@@ -209,8 +209,8 @@ def addAdvStatstoFrame(df: DataFrame, add_to_frame: bool = False) -> DataFrame:
     out_df['o_gamecontrol'] = 1 - out_df['t_gamecontrol']
     out_df['t_sos'] = df['t_score'] / out_df['t_poss'] - df['o_score'] / out_df['o_poss']
     out_df['o_sos'] = df['o_score'] / out_df['o_poss'] - df['t_score'] / out_df['t_poss']
-    out_df['t_tie'] = out_df['t_pie'] / (out_df['t_pie'] + out_df['o_pie'])
-    out_df['o_tie'] = out_df['o_pie'] / (out_df['t_pie'] + out_df['o_pie'])
+    # out_df['t_tie'] = out_df['t_pie'] / (out_df['t_pie'] + out_df['o_pie'])
+    # out_df['o_tie'] = out_df['o_pie'] / (out_df['t_pie'] + out_df['o_pie'])
 
     # third order derived stats
     eff_model = np.polyfit(out_df['t_efg%'], out_df['t_offrat'], 1)
@@ -258,12 +258,12 @@ def addSeasonalStatsToFrame(sdf: DataFrame, df: DataFrame, add_to_frame: bool = 
 
     return df.merge(out_df, right_index=True, left_index=True) if add_to_frame else out_df
 
-def loadTeamNames(datapath: str = './data'):
+def loadTeamNames(datapath: str = './data', gender='M'):
     """
     Create a dict of team names and ids so we know who's behind the numbers.
     :return: Dict of teamIDs and names.
     """
-    df = pd.concat([pd.read_csv(f'{datapath}/MTeams.csv'), pd.read_csv(f'{datapath}/WTeams.csv')]).sort_index()
+    df = pd.concat([pd.read_csv(f'{datapath}/{gender}Teams.csv'), pd.read_csv(f'{datapath}/{gender}Teams.csv')]).sort_index()
     ret = {}
     for idx, row in df.iterrows():
         ret[row['TeamID']] = row['TeamName']
@@ -280,9 +280,10 @@ if __name__ == '__main__':
 
     m_season_data_fnme = Path(f"{config['load_data']['data_path']}/MRegularSeasonDetailedResults.csv")
     msdf = pd.read_csv(m_season_data_fnme)
+    msdf = pd.concat((msdf, pd.read_csv(Path(f"{config['load_data']['data_path']}/WRegularSeasonDetailedResults.csv"))), ignore_index=True)
 
     sdf = prepFrame(msdf)
-    adf = addAdvStatstoFrame(sdf)
+    adf = addAdvStatstoFrame(sdf).fillna(0.)
     avdf = adf.groupby(['season', 'tid']).mean()
     # countdf = adf.groupby(['season', 'tid']).count()
     stddf = adf.groupby(['season', 'tid']).std()
@@ -300,6 +301,7 @@ if __name__ == '__main__':
         nchck = tgrp[o_cols].merge(o_av[t_cols], left_on=['season', 'oid'], right_on=['season', 'tid'])
         # Join with the std so we can calculate the # of stds each game was affected by the team
         nstd = tgrp[o_cols].merge(stddf[t_cols], left_on=['season', 'oid'], right_on=['season', 'tid'])
+        nstd = nstd.fillna(1.)
         # Get the number of standard deviations away from the mean this team made its opponent go
         inf_data = (nchck[o_cols].values - nchck[t_cols].values) / nstd[t_cols].values
 
@@ -355,6 +357,8 @@ if __name__ == '__main__':
     print('Running elo ratings...')
     m_cond_data_fnme = Path(f"{config['load_data']['data_path']}/MRegularSeasonCompactResults.csv")
     mcdf = pd.read_csv(m_cond_data_fnme)
+    mcdf = pd.concat((mcdf, pd.read_csv(Path(f"{config['load_data']['data_path']}/WRegularSeasonCompactResults.csv"))),
+                     ignore_index=True)
     mcdf = mcdf.loc[mcdf['Season'] > 2001]
 
     # Don't duplicate for the losers because we want to play each game once
@@ -427,9 +431,9 @@ if __name__ == '__main__':
     ord_id = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].rename(
         columns={'season': 'Season', 'tid': 'TeamID', 'daynum': 'RankingDayNum'})
     ord_id = ord_id[ord_id['Season'] > 2002]
-    adf[['t_rank', 'o_rank']] = 0.
+    # adf[['t_rank', 'o_rank']] = 0.
 
-    print('Running ranking consolidation...')
+    '''print('Running ranking consolidation...')
     if config['load_data']['run_rank_opt']:
         av_acc = dict(zip(ord_df.columns, np.zeros(ord_df.shape[1])))
     for t in tqdm(tids):
@@ -447,7 +451,7 @@ if __name__ == '__main__':
     ind_1 = adf.reset_index().drop_duplicates(subset=['gid'], keep='last').set_index(['gid', 'season', 'tid', 'oid']).index
     adf.loc[ind_0, 'o_rank'] = adf.loc[ind_1, 't_rank'].values
     adf.loc[ind_1, 'o_rank'] = adf.loc[ind_0, 't_rank'].values
-    avdf[['t_rank', 'o_rank']] = adf[['t_rank', 'o_rank']].groupby(['season', 'tid']).mean()
+    avdf[['t_rank', 'o_rank']] = adf[['t_rank', 'o_rank']].groupby(['season', 'tid']).mean()'''
 
     adf[['t_score', 'o_score', 'numot']] = sdf[['t_score', 'o_score', 'numot']]
 
@@ -457,34 +461,39 @@ if __name__ == '__main__':
 
     print('Adding conference stats to frame...')
     conf = pd.read_csv(Path(f"{config['load_data']['data_path']}/MTeamConferences.csv"))
+    conf = pd.concat((conf, pd.read_csv(Path(f"{config['load_data']['data_path']}/WTeamConferences.csv"))),
+                     ignore_index=True)
     conf = conf.rename(columns={'TeamID': 'tid', 'Season': 'season'})
-    # conf = conf.set_index(['Season', 'TID'])
-    cj_df = conf.set_index(['season', 'tid']).join(avdf[['t_elo', 't_rank']])
+    # cj_df = conf.set_index(['season', 'tid']).join(avdf[['t_elo', 't_rank']])
+    cj_df = conf.set_index(['season', 'tid']).join(avdf[['t_elo']])
     # Set mean
     conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).mean(), on=['season', 'ConfAbbrev'])
-    conf = conf.rename(columns={'t_elo': 'conf_meanelo', 't_rank': 'conf_meanrank'})
+    # conf = conf.rename(columns={'t_elo': 'conf_meanelo', 't_rank': 'conf_meanrank'})
+    conf = conf.rename(columns={'t_elo': 'conf_meanelo'})
     # Set max
     conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).max(), on=['season', 'ConfAbbrev'])
-    conf = conf.rename(columns={'t_elo': 'conf_maxelo', 't_rank': 'conf_minrank'})
+    # conf = conf.rename(columns={'t_elo': 'conf_maxelo', 't_rank': 'conf_minrank'})
+    conf = conf.rename(columns={'t_elo': 'conf_maxelo'})
     # Set min
     conf = conf.merge(cj_df.groupby(['season', 'ConfAbbrev']).min(), on=['season', 'ConfAbbrev'])
-    conf = conf.rename(columns={'t_elo': 'conf_minelo', 't_rank': 'conf_maxrank'})
+    # conf = conf.rename(columns={'t_elo': 'conf_minelo', 't_rank': 'conf_maxrank'})
+    conf = conf.rename(columns={'t_elo': 'conf_minelo'})
     avdf = avdf.merge(conf, on=['season', 'tid']).drop(columns=['ConfAbbrev']).set_index(['season', 'tid'])
 
 
     # Save out the files so we can use them later
     if config['load_data']['save_files']:
-        adf.to_csv(Path(f'{config["load_data"]["save_path"]}/MGameDataAdv.csv'))
-        sdf.to_csv(Path(f'{config["load_data"]["save_path"]}/MGameDataBasic.csv'))
+        adf.to_csv(Path(f'{config["load_data"]["save_path"]}/GameDataAdv.csv'))
+        sdf.to_csv(Path(f'{config["load_data"]["save_path"]}/GameDataBasic.csv'))
 
     # Create a dataframe of the tournament results with average data
-    ncaa_fnme = f'{config["load_data"]["data_path"]}/MNCAATourneyCompactResults.csv'
+    '''ncaa_fnme = f'{config["load_data"]["data_path"]}/{gender}NCAATourneyCompactResults.csv'
     ncaa_tdf = pd.read_csv(ncaa_fnme)
 
     ncaa_tdf = prepFrame(ncaa_tdf)
 
     # Add in secondary tourney results
-    sec_fnme = f'{config["load_data"]["data_path"]}/MSecondaryTourneyCompactResults.csv'
+    sec_fnme = f'{config["load_data"]["data_path"]}/{gender}SecondaryTourneyCompactResults.csv'
     sc_tdf = pd.read_csv(sec_fnme)
     ncaa_tdf = pd.concat([ncaa_tdf, prepFrame(sc_tdf)])
     ncaa_tdf['t_win'] = ncaa_tdf['t_score'] - ncaa_tdf['o_score'] > 0
@@ -493,10 +502,10 @@ if __name__ == '__main__':
     print('Generating tournament training data...')
     avdf_norm = normalize(avdf, to_season=True)
     # tdf, odf = getMatches(ncaa_tdf, avdf_norm)
-    # results_df = ncaa_tdf.loc[tdf.index, ['t_win']]
+    # results_df = ncaa_tdf.loc[tdf.index, ['t_win']]'''
 
     if config['load_data']['save_files']:
-        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/MAverages.csv'))
+        avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Averages.csv'))
 
 
 
