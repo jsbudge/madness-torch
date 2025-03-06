@@ -209,15 +209,17 @@ class GameSequencePredictor(LightningModule):
         self.e_sz = encoded_sz
         self.sigma = sigma
         self.encoding_layer = nn.Sequential(
-            nn.Linear(self.encoded_size, latent_size),
+            nn.Linear(self.encoded_size, latent_size * 2),
             nn.GELU(),
             nn.Conv1d(in_channels, in_channels, 1, 1, 0),
             nn.GELU(),
+            nn.BatchNorm1d(in_channels),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
             nn.GELU(),
             nn.Dropout(.15),
-            nn.Linear(latent_size, latent_size),
+            nn.Linear(latent_size * 2, latent_size),
             nn.GELU(),
+            nn.LayerNorm(latent_size),
         )
 
         self.classifier = nn.Sequential(
@@ -229,7 +231,7 @@ class GameSequencePredictor(LightningModule):
 
         dnn_to_bnn(self.classifier, bnn_prior_parameters={
             "prior_mu": 0.0,
-            "prior_sigma": 1.0,
+            "prior_sigma": .33,
             "posterior_mu_init": 0.0,
             "posterior_rho_init": -4.0,
             "type": "Reparameterization",  # Flipout or Reparameterization
@@ -248,8 +250,8 @@ class GameSequencePredictor(LightningModule):
         x = positional_encoding(x, self.sigma, self.e_sz)
         return self.encoding_layer(x)
 
-    def loss_function(self, y, y_pred):
-        return tf.binary_cross_entropy(y, y_pred)
+    def loss_function(self, y_pred, y):
+        return tf.binary_cross_entropy(y_pred, y)
 
     def on_fit_start(self) -> None:
         if self.trainer.is_global_zero and self.logger:

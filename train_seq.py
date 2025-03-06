@@ -1,16 +1,13 @@
 from glob import glob
 from pathlib import Path
-
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer, loggers, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, StochasticWeightAveraging, ModelCheckpoint
-from dataloader import EncoderDataModule, PredictorDataModule, GameDataModule
-from model import Encoder, Predictor, GameSequencePredictor
-from sklearn.decomposition import KernelPCA
+from dataloader import GameDataModule
+from model import GameSequencePredictor
 import numpy as np
 from tqdm import tqdm
-import itertools
 import yaml
 
 
@@ -39,7 +36,8 @@ if __name__ == '__main__':
                                                                 config['seq_predictor']['training']['swa_start'])), 1e-9)
     trainer = Trainer(logger=logger, max_epochs=config['seq_predictor']['training']['max_epochs'],
                       default_root_dir=config['seq_predictor']['training']['weights_path'],
-                      log_every_n_steps=config['seq_predictor']['training']['log_epoch'], callbacks=
+                      log_every_n_steps=config['seq_predictor']['training']['log_epoch'],
+                      num_sanity_val_steps=0, detect_anomaly=False, callbacks=
                       [EarlyStopping(monitor='train_loss', patience=config['seq_predictor']['training']['patience'],
                                      check_finite=True),
                        StochasticWeightAveraging(swa_lrs=expected_lr,

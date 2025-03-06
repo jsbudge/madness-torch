@@ -87,10 +87,10 @@ class GameDataset(Dataset):
         # Load in data
         self.datapath = datapath
         self.data = []
-        start = 2004
-        end = 2025
+        start = 2004 if not is_val else 2021
+        end = 2025 if is_val else 2021
         for season in range(start, end):
-            dp = f'{datapath}/{season}' if not is_val else f'{datapath}/t{season}'
+            dp = f'{datapath}/{season}'#  if not is_val else f'{datapath}/t{season}'
             if Path(f'{datapath}/{season}').exists():
                 self.data.append(glob(f'{dp}/*.pt'))
         self.data = np.concatenate(self.data)
@@ -124,7 +124,7 @@ class GameDataModule(LightningDataModule):
         self.train_dataset = None
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
-        self.num_workers = 0  # cpu_count() // 2
+        self.num_workers = cpu_count() // 2
         self.pin_memory = pin_memory
         self.single_example = single_example
         self.device = device
@@ -140,6 +140,7 @@ class GameDataModule(LightningDataModule):
             batch_size=self.train_batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
+            persistent_workers=True,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:

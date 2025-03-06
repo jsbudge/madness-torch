@@ -42,13 +42,13 @@ if __name__ == '__main__':
     bdf = pd.read_csv(Path(f'{datapath}\\GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
     av_other_df = pd.read_csv(Path(f'{datapath}\\Averages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
-    adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0)
-    bdf = bdf.loc(axis=0)[:, 2004:]
+    adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0).sort_index()
+    bdf = bdf.loc(axis=0)[:, 2004:].sort_index()
     print('dataframes loaded.')
 
     # Averaging using various methods over whole dataset, not averages
     # Save these as different datasets for training
-    for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
+    '''for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         if method == 'Simple':
             avdf = adf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
@@ -77,7 +77,7 @@ if __name__ == '__main__':
         avdf_norm = normalize(avdf, to_season=True)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Normalized{method}Averages.csv'))
-        print(f'Saved {method}')
+        print(f'Saved {method}')'''
 
     # Run SVD to get noise out of the values
     adf = normalize(adf)
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     check_tsvd.fit(adf)
     n_true = sum(check_tsvd.singular_values_ > 1e-3)
     tsvd = TruncatedSVD(n_components=n_true)
-    adf = normalize(pd.DataFrame(index=adf.index, data=tsvd.fit_transform(adf)))
+    adf = normalize(pd.DataFrame(index=adf.index, data=tsvd.fit_transform(adf))).sort_index()
 
     # Build dataset for training averaging method using last 5 games
     onehot = OneHotEncoder(sparse_output=False)
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     adf = adf.reset_index().set_index(['gid', 'season', 'tid', 'oid', 'daynum']).sort_index()
     bdf = bdf.reset_index().set_index(['gid', 'season', 'tid', 'oid', 'daynum']).sort_index()
     # target = adf['t_score'] - adf['o_score'] > 0
-    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+    '''for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/{season}')
         if not season_path.exists():
             os.mkdir(season_path)
@@ -112,10 +112,10 @@ if __name__ == '__main__':
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
             torch.save([t_hist, o_hist, target_hist, np.float32(res['t_score'] > res['o_score'])], f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
-
+'''
     # Apply same logic to tournament data
     tdf = pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv'))
-    tdf = prepFrame(pd.concat((tdf, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))), ignore_index=True))
+    tdf = prepFrame(pd.concat((tdf, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))), ignore_index=True)).sort_index()
     for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/t{season}')
         if not season_path.exists():
@@ -126,8 +126,11 @@ if __name__ == '__main__':
             print('Missing a season.')
             continue
         for idx, row in tqdm(stdf.iterrows()):
-            t_games = adf.loc(axis=0)[:, season, idx[2]]
-            o_games = adf.loc(axis=0)[:, season, idx[3]]
+            try:
+                t_games = adf.loc(axis=0)[:, season, idx[2]]
+                o_games = adf.loc(axis=0)[:, season, idx[3]]
+            except KeyError:
+                continue
             if t_games.shape[0] < 6 or o_games.shape[0] < 6:
                 continue
             t_hist = torch.tensor(t_games.iloc[-5:].values, dtype=torch.float32)

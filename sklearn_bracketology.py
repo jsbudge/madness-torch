@@ -33,11 +33,11 @@ if __name__ == '__main__':
     data = data.loc(axis=0)[:, 2004:]
     results = data['t_score'] - data['o_score'] > 0
     tdata = pd.read_csv(Path(f'{datapath}\\MNCAATourneyCompactResults.csv'))
-    tdata = pd.concat((tdata, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))))
+    tdata = pd.concat((tdata, pd.read_csv(Path(f'{datapath}\\WNCAATourneyCompactResults.csv'))), ignore_index=True)
     tdata = prepFrame(tdata, False).loc(axis=0)[:, 2004:]
     method_results = pd.DataFrame(index=tdata.index, columns=['Truth'], data=tdata['t_score'] - tdata['o_score'] > 0).astype(np.float32)
 
-    for method in ['Simple', 'Gauss', 'Elo', 'Rank', 'Recent']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         for prenorm in [True, False]:
             fnme = f'Normalized{method}Averages' if prenorm else f'{method}Averages'
             print(f'Running {fnme}...')
