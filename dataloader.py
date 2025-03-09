@@ -87,10 +87,10 @@ class GameDataset(Dataset):
         # Load in data
         self.datapath = datapath
         self.data = []
-        start = 2004 if not is_val else 2021
+        start = 2010 if not is_val else 2021
         end = 2025 if is_val else 2021
         for season in range(start, end):
-            dp = f'{datapath}/{season}'#  if not is_val else f'{datapath}/t{season}'
+            dp = f'{datapath}/t{season}'
             if Path(f'{datapath}/{season}').exists():
                 self.data.append(glob(f'{dp}/*.pt'))
         self.data = np.concatenate(self.data)

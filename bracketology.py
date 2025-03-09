@@ -40,6 +40,7 @@ def runCalcs(runs, feats, datapath, model, model_type: str = 'torch'):
             res.append(scoreBracket(test, truth_br))
     return res_df
 
+
 if __name__ == '__main__':
     with open('./run_params.yaml', 'r') as file:
         try:
@@ -57,13 +58,7 @@ if __name__ == '__main__':
             # Grab predictor model
             model = Predictor.load_from_checkpoint(
                 Path(f"{config['model']['training']['weights_path']}/{mdl_name}.ckpt"),
-            **config['model'], strict=False)
+                **config['model'], strict=False)
             model.eval()
 
             res_dict[fnme] = runCalcs(100, enc_df, config["dataloader"]["datapath"], model)
-
-
-
-
-
-

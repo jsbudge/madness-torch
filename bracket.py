@@ -26,12 +26,12 @@ def scoreBracket(br, truth_br, score_type=None):
     return score
 
 
-def generateBracket(season: int, use_results: bool = True, datapath: str = './data'):
-    seeds = pd.read_csv(f'{datapath}/MNCAATourneySeeds.csv')
+def generateBracket(season: int, use_results: bool = True, datapath: str = './data', gender='M'):
+    seeds = pd.read_csv(f'{datapath}/{gender}NCAATourneySeeds.csv')
     seeds = seeds.loc[seeds['Season'] == season]
-    slots = pd.read_csv(f'{datapath}/MNCAATourneySlots.csv')
+    slots = pd.read_csv(f'{datapath}/{gender}NCAATourneySlots.csv')
     slots = slots.loc[slots['Season'] == season]
-    seedslots = pd.read_csv(f'{datapath}/MNCAATourneySeedRoundSlots.csv').rename(columns={'GameSlot': 'Slot'})
+    seedslots = pd.read_csv(f'{datapath}/{gender}NCAATourneySeedRoundSlots.csv').rename(columns={'GameSlot': 'Slot'})
     structure = slots.merge(seedslots[['Slot', 'GameRound']], on='Slot')
     structure = structure.loc[np.logical_not(structure.duplicated(['Season', 'Slot'], keep='first'))].sort_values(
         'GameRound')
@@ -50,7 +50,7 @@ def generateBracket(season: int, use_results: bool = True, datapath: str = './da
                     gm.tid = seeds.loc[seeds['Seed'] == gmid, 'TeamID'].values[0]
                     gm.slot_win = gmid
     else:
-        results = pd.read_csv(f'{datapath}/MNCAATourneyCompactResults.csv')
+        results = pd.read_csv(f'{datapath}/{gender}NCAATourneyCompactResults.csv')
         results = results.loc[results['Season'] == season]
         for n in range(len(rnds) - 1, -1, -1):
             r = rnds[n]

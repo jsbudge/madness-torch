@@ -16,6 +16,9 @@ class SKLearnWrapper(object):
     def fit(self, x, y):
         self.classifier.fit(x, y)
 
+    def __call__(self, x):
+        return self.forward(x)
+
 
 class TorchWrapper(object):
 
@@ -24,4 +27,23 @@ class TorchWrapper(object):
 
     def forward(self, x):
         return self.classifier(x)
+
+    def __call__(self, x):
+        return self.forward(x)
+
+    def fit(self, x, y):
+        pass
+
+
+class SeasonalSplit:
+    def __init__(self, random_state=None):
+        self.random_state = random_state
+
+    def split(self, X, y=None):
+        seasons = list(set(X.index.get_level_values(1)))
+        for s in seasons:
+            yield X.loc[X.index.get_level_values(1) == s].index, X.loc[X.index.get_level_values(1) != s].index
+
+    def get_n_splits(self, X, y=None, groups=None):
+        return len(list(set(X.index.get_level_values(1))))
 

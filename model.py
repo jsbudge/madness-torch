@@ -209,22 +209,19 @@ class GameSequencePredictor(LightningModule):
         self.e_sz = encoded_sz
         self.sigma = sigma
         self.encoding_layer = nn.Sequential(
-            nn.Linear(self.encoded_size, latent_size * 2),
-            nn.GELU(),
-            nn.Conv1d(in_channels, in_channels, 1, 1, 0),
-            nn.GELU(),
-            nn.BatchNorm1d(in_channels),
+            nn.Linear(self.encoded_size, latent_size),
+            nn.SELU(),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
-            nn.GELU(),
-            nn.Dropout(.15),
-            nn.Linear(latent_size * 2, latent_size),
-            nn.GELU(),
+            nn.SELU(),
+            nn.Linear(latent_size, latent_size),
+            nn.SELU(),
             nn.LayerNorm(latent_size),
         )
 
         self.classifier = nn.Sequential(
             nn.Linear(latent_size * 2 + 3, latent_size),
-            nn.GELU(),
+            nn.SELU(),
+            nn.Dropout(.25),
             nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )

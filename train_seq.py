@@ -85,6 +85,8 @@ if __name__ == '__main__':
                                      pd.DataFrame(data=np.stack([gid, seas, tid, oid, predictions, targets]).T,
                                                   columns=['gid', 'season', 'tid', 'oid', 'pred', 'truth'])))
     results = results.set_index(['gid', 'season', 'tid', 'oid'])
+    corrects = sum(np.round(results['pred']) - results['truth'] == 0) / results.shape[0]
+    print(f'{corrects} correct.')
 
 
 
