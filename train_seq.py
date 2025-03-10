@@ -83,9 +83,10 @@ if __name__ == '__main__':
                 seas = [season for _ in file_data]
                 results = pd.concat((results,
                                      pd.DataFrame(data=np.stack([gid, seas, tid, oid, predictions, targets]).T,
-                                                  columns=['gid', 'season', 'tid', 'oid', 'pred', 'truth'])))
+                                                  columns=['gid', 'season', 'tid', 'oid', 'Res', 'truth'])))
     results = results.set_index(['gid', 'season', 'tid', 'oid'])
-    corrects = sum(np.round(results['pred']) - results['truth'] == 0) / results.shape[0]
+    corrects = sum(np.round(results['Res']) - results['truth'] == 0) / results.shape[0]
+    # config.season
     print(f'{corrects} correct.')
 
 

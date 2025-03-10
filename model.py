@@ -208,14 +208,19 @@ class GameSequencePredictor(LightningModule):
         self.encoded_size = self.init_size * 2 * encoded_sz
         self.e_sz = encoded_sz
         self.sigma = sigma
-        self.encoding_layer = nn.Sequential(
+        self.encode0 = nn.Sequential(
             nn.Linear(self.encoded_size, latent_size),
             nn.SELU(),
-            nn.Conv1d(in_channels, 1, 1, 1, 0),
+        )
+
+        self.encode1 = nn.Sequential(
+            nn.Linear(in_channels, 1),
             nn.SELU(),
+        )
+
+        self.encode2 = nn.Sequential(
             nn.Linear(latent_size, latent_size),
             nn.SELU(),
-            nn.LayerNorm(latent_size),
         )
 
         self.classifier = nn.Sequential(
@@ -245,7 +250,10 @@ class GameSequencePredictor(LightningModule):
 
     def encode(self, x):
         x = positional_encoding(x, self.sigma, self.e_sz)
-        return self.encoding_layer(x)
+        x = self.encode0(x)
+        x = self.encode1(x.transpose(1, 2))
+        x = self.encode2(x.transpose(1, 2))
+        return x
 
     def loss_function(self, y_pred, y):
         return tf.binary_cross_entropy(y_pred, y)

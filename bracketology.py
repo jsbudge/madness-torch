@@ -1,12 +1,8 @@
 from pathlib import Path
-
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import torch
 import yaml
 import pandas as pd
-from urllib3.util import SKIPPABLE_HEADERS
-
 from bracket import Bracket, generateBracket, applyResultsToBracket, scoreBracket
 from load_data import getPossMatches, getMatches
 from sklearn.ensemble import RandomForestClassifier
