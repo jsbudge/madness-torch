@@ -43,6 +43,7 @@ class GameDataset(Dataset):
         # self.data = Xs if is_val else Xt
         check = torch.load(self.data[0])
         self.data_len = check[0].shape[-1]
+        self.extra_len = check[2].shape[-1]
 
     def __getitem__(self, idx):
         return torch.load(self.data[idx])

@@ -194,7 +194,7 @@ class Predictor(LightningModule):
 
 class GameSequencePredictor(LightningModule):
 
-    def __init__(self, init_size: int = 256, latent_size: int = 22, in_channels: int = 5, lr: float = 1e-5, weight_decay: float = 0.0,
+    def __init__(self, init_size: int = 256, extra_param_size: int = 256, latent_size: int = 22, in_channels: int = 5, lr: float = 1e-5, weight_decay: float = 0.0,
                  encoded_sz: int = 10, sigma: float = 10., scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args, **kwargs):
         super().__init__()
         self.init_size = init_size
@@ -205,28 +205,36 @@ class GameSequencePredictor(LightningModule):
         self.weight_decay = weight_decay
         self.scheduler_gamma = scheduler_gamma
         self.betas = betas
-        self.encoded_size = self.init_size * 2 * encoded_sz
+        self.encoded_size = self.init_size * 4
         self.e_sz = encoded_sz
         self.sigma = sigma
         self.encode0 = nn.Sequential(
             nn.Linear(self.encoded_size, latent_size),
             nn.SELU(),
+            nn.Dropout(.5),
         )
 
         self.encode1 = nn.Sequential(
             nn.Linear(in_channels, 1),
             nn.SELU(),
+            nn.Dropout(.5),
         )
 
         self.encode2 = nn.Sequential(
             nn.Linear(latent_size, latent_size),
             nn.SELU(),
+            nn.Dropout(.5),
+        )
+
+        self.extra_layer = nn.Sequential(
+            nn.Linear(extra_param_size, latent_size),
+            nn.SELU(),
+            nn.Dropout(.5),
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(latent_size * 2 + 3, latent_size),
-            nn.SELU(),
-            nn.Dropout(.25),
+            nn.Linear(latent_size * 4, latent_size),
+            nn.GELU(),
             nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
@@ -242,14 +250,16 @@ class GameSequencePredictor(LightningModule):
 
         self.latent = latent_size
 
-    def forward(self, x, y, loc):
+    def forward(self, x, y, tav, oav):
         x = self.encode(x)
+        x = torch.cat([x.squeeze(1), self.extra_layer(tav)], dim=-1)
         y = self.encode(y)
-        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1), loc], dim=-1))
+        y = torch.cat([y.squeeze(1), self.extra_layer(oav)], dim=-1)
+        x = self.classifier(torch.cat([x, y], dim=-1))
         return x.squeeze(1)
 
     def encode(self, x):
-        x = positional_encoding(x, self.sigma, self.e_sz)
+        x = torch.cat([torch.cos(x), torch.sin(x), torch.cos(2 * np.pi * self.sigma * x), torch.sin(2 * np.pi * self.sigma * x)], dim=-1)  # positional_encoding(x, self.sigma, self.e_sz)
         x = self.encode0(x)
         x = self.encode1(x.transpose(1, 2))
         x = self.encode2(x.transpose(1, 2))
@@ -299,9 +309,9 @@ class GameSequencePredictor(LightningModule):
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def train_val_get(self, batch, batch_idx, kind='train'):
-        team, opp, loc, targets = batch
+        team, opp, t_av, o_av, targets = batch
 
-        results = self.forward(team, opp, loc)
+        results = self.forward(team, opp, t_av, o_av)
         train_loss = self.loss_function(results, targets)
 
         self.log_dict({f'{kind}_loss': train_loss}, on_epoch=True,
