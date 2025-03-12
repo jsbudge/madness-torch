@@ -78,7 +78,7 @@ if __name__ == '__main__':
         avdf_norm = normalize(avdf)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Normalized{method}Averages.csv'))
-        print(f'Saved {method}')
+        print(f'Saved {method}')'''
 
     # Build dataset for training averaging method using last 5 games
     onehot = OneHotEncoder(sparse_output=False)
@@ -105,14 +105,13 @@ if __name__ == '__main__':
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
             torch.save([t_hist, o_hist, target_hist, np.float32(res['t_score'] > res['o_score'])],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
     # Apply same logic to tournament data
     adf = normalize(adf)
     tdf = pd.read_csv(Path(f'{datapath}/MNCAATourneyCompactResults.csv'))
     tdf = prepFrame(pd.concat((tdf, pd.read_csv(Path(f'{datapath}/WNCAATourneyCompactResults.csv'))),
                               ignore_index=True)).sort_index()
-    extra_df, extra0_df = getMatches(tdf, avodf)
     for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/t{season}')
         if not season_path.exists():
@@ -132,16 +131,14 @@ if __name__ == '__main__':
                 continue
             t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
             o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
-            o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            # target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
+            target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
-            torch.save([t_hist, o_hist, t_av, o_av, np.float32(row['t_score'] > row['o_score'])],
+            torch.save([t_hist, o_hist, target_hist, np.float32(row['t_score'] > row['o_score'])],
                        f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
     # This is for predicting possible matchups
-    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+    '''for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         if season == 2020:
             continue
         extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
@@ -160,11 +157,11 @@ if __name__ == '__main__':
             o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
             t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
             o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            # target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
+            target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
-            torch.save([t_hist, o_hist, t_av, o_av, .5],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+            torch.save([t_hist, o_hist, target_hist, .5],
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
 
 
 

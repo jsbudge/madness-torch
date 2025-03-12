@@ -29,7 +29,6 @@ if __name__ == '__main__':
 
     # Get the model, experiment, logger set up
     config['seq_predictor']['init_size'] = data.train_dataset.data_len
-    config['seq_predictor']['extra_param_size'] = data.train_dataset.extra_len
     mdl_name = f"{config['seq_predictor']['name']}"
     model = GameSequencePredictor(**config['seq_predictor'])
     logger = loggers.TensorBoardLogger(config['seq_predictor']['training']['log_dir'], name=mdl_name)
@@ -71,10 +70,9 @@ if __name__ == '__main__':
             ch_d = [torch.load(g) for g in files]
             t_data = torch.cat([c[0].unsqueeze(0) for c in ch_d], dim=0)
             o_data = torch.cat([c[1].unsqueeze(0) for c in ch_d], dim=0)
-            tav_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
-            oav_data = torch.cat([c[3].unsqueeze(0) for c in ch_d], dim=0)
-            targets = np.array([c[4] for c in ch_d])
-            predictions = model(t_data, o_data, tav_data, oav_data).detach().numpy()
+            loc_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
+            targets = np.array([c[3] for c in ch_d])
+            predictions = model(t_data, o_data, loc_data).detach().numpy()
 
             file_data = [Path(c).stem for c in files]
             gid = [int(c.split('_')[0]) for c in file_data]

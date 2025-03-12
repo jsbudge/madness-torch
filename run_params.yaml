@@ -74,7 +74,7 @@ seq_predictor:
   training:
     log_dir: ./logs
     swa_start: .6
-    max_epochs: 150
+    max_epochs: 550
     log_epoch: 50
     weights_path: ./models
     warm_start: False
