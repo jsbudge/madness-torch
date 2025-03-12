@@ -39,11 +39,11 @@ if __name__ == '__main__':
                       default_root_dir=config['seq_predictor']['training']['weights_path'],
                       log_every_n_steps=config['seq_predictor']['training']['log_epoch'],
                       num_sanity_val_steps=0, detect_anomaly=False, callbacks=
-                      [EarlyStopping(monitor='train_loss', patience=config['seq_predictor']['training']['patience'],
+                      [EarlyStopping(monitor='val_loss', patience=config['seq_predictor']['training']['patience'],
                                      check_finite=True),
                        StochasticWeightAveraging(swa_lrs=expected_lr,
                                                  swa_epoch_start=config['seq_predictor']['training']['swa_start']),
-                       ModelCheckpoint(monitor='train_loss')])
+                       ModelCheckpoint(monitor='val_loss')])
 
     print("======= Training =======")
     try:

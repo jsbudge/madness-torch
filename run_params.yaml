@@ -65,20 +65,18 @@ seq_predictor:
   init_size: 70
   extra_param_size: 93
   latent_size: 5
-  in_channels: 5
-  sigma: 1000.
-  encoded_sz: 2
-  lr: .001
-  weight_decay: 0.1
+  in_channels: 15
+  lr: .00001
+  weight_decay: 0.8
   scheduler_gamma: .999
   betas: [.9, .99]
   num_samples: 100
   training:
     log_dir: ./logs
-    swa_start: .99
+    swa_start: .6
     max_epochs: 150
     log_epoch: 50
     weights_path: ./models
     warm_start: False
-    save_model: True
+    save_model: False
     patience: 50

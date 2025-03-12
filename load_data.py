@@ -10,6 +10,19 @@ from sklearn.linear_model import Ridge
 import yaml
 
 
+def load(dtype='adv', datapath=None):
+    if dtype == 'adv':
+        return pd.read_csv(Path(f'{datapath}/GameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    elif dtype == 'basic':
+        return pd.read_csv(Path(f'{datapath}/GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    else:
+        try:
+            data = pd.read_csv(Path(f'{datapath}/{dtype}.csv')).set_index(['season', 'tid'])
+        except FileNotFoundError:
+            print(f'Error finding {dtype}')
+            data = None
+        return data
+
 def normalize(df: DataFrame, transform = None, to_season: bool = False):
     """
     Normalize a frame to have a mean of zero and standard deviation of one.

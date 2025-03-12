@@ -51,6 +51,10 @@ class GameDataset(Dataset):
     def __len__(self):
         return self.data.shape[0]
 
+def gd_collate(batch):
+    return (torch.stack([x[0] for x in batch]), torch.stack([x[1] for x in batch]), torch.stack([x[2] for x in batch]),
+            torch.stack([x[3] for x in batch]), torch.tensor([x[4] for x in batch]))
+
 
 class GameDataModule(LightningDataModule):
     def __init__(
@@ -88,6 +92,7 @@ class GameDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             persistent_workers=True,
+            collate_fn=gd_collate,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
@@ -97,6 +102,7 @@ class GameDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             persistent_workers=True,
+            collate_fn=gd_collate,
         )
 
 

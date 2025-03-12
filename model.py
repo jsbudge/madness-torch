@@ -7,6 +7,12 @@ from torch import nn, Tensor
 from torch.nn import functional as tf
 
 
+def init_weights(m):
+    if isinstance(m, nn.Linear) or isinstance(m, nn.Conv1d):
+        torch.nn.init.xavier_uniform(m.weight)
+        m.bias.data.fill_(0.01)
+
+
 class Encoder(LightningModule):
 
     def __init__(self, init_size: int = 256, latent_size: int = 22, lr: float = 1e-5, weight_decay: float = 0.0,
@@ -194,8 +200,9 @@ class Predictor(LightningModule):
 
 class GameSequencePredictor(LightningModule):
 
-    def __init__(self, init_size: int = 256, extra_param_size: int = 256, latent_size: int = 22, in_channels: int = 5, lr: float = 1e-5, weight_decay: float = 0.0,
-                 encoded_sz: int = 10, sigma: float = 10., scheduler_gamma: float = .7, betas: tuple[float, float] = (.9, .99), *args, **kwargs):
+    def __init__(self, init_size: int = 256, extra_param_size: int = 256, latent_size: int = 22, in_channels: int = 5,
+                 lr: float = 1e-5, weight_decay: float = 0.0, scheduler_gamma: float = .7,
+                 betas: tuple[float, float] = (.9, .99), *args, **kwargs):
         super().__init__()
         self.init_size = init_size
         self.latent_size = latent_size
@@ -205,26 +212,16 @@ class GameSequencePredictor(LightningModule):
         self.weight_decay = weight_decay
         self.scheduler_gamma = scheduler_gamma
         self.betas = betas
-        self.encoded_size = self.init_size * 4
-        self.e_sz = encoded_sz
-        self.sigma = sigma
         self.encode0 = nn.Sequential(
-            nn.Linear(self.encoded_size, latent_size),
+            nn.Linear(self.init_size, latent_size),
+            nn.SELU(),
+            nn.Dropout(.5),
+            nn.Conv1d(in_channels, 1, 1, 1, 0),
             nn.SELU(),
             nn.Dropout(.5),
         )
 
-        self.encode1 = nn.Sequential(
-            nn.Linear(in_channels, 1),
-            nn.SELU(),
-            nn.Dropout(.5),
-        )
-
-        self.encode2 = nn.Sequential(
-            nn.Linear(latent_size, latent_size),
-            nn.SELU(),
-            nn.Dropout(.5),
-        )
+        self.encode0.apply(init_weights)
 
         self.extra_layer = nn.Sequential(
             nn.Linear(extra_param_size, latent_size),
@@ -232,12 +229,14 @@ class GameSequencePredictor(LightningModule):
             nn.Dropout(.5),
         )
 
+        self.extra_layer.apply(init_weights)
+
         self.classifier = nn.Sequential(
-            nn.Linear(latent_size * 4, latent_size),
-            nn.GELU(),
-            nn.Linear(latent_size, 1),
+            nn.Linear(latent_size * 4, 1),
             nn.Sigmoid()
         )
+
+        self.classifier.apply(init_weights)
 
         dnn_to_bnn(self.classifier, bnn_prior_parameters={
             "prior_mu": 0.0,
@@ -259,10 +258,8 @@ class GameSequencePredictor(LightningModule):
         return x.squeeze(1)
 
     def encode(self, x):
-        x = torch.cat([torch.cos(x), torch.sin(x), torch.cos(2 * np.pi * self.sigma * x), torch.sin(2 * np.pi * self.sigma * x)], dim=-1)  # positional_encoding(x, self.sigma, self.e_sz)
+        # positional_encoding(x, self.sigma, self.e_sz)
         x = self.encode0(x)
-        x = self.encode1(x.transpose(1, 2))
-        x = self.encode2(x.transpose(1, 2))
         return x
 
     def loss_function(self, y_pred, y):

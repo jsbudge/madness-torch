@@ -6,7 +6,7 @@ import yaml
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.decomposition import TruncatedSVD
 from tqdm import tqdm
-from load_data import addSeasonalStatsToFrame, normalize, prepFrame, getMatches
+from load_data import addSeasonalStatsToFrame, normalize, prepFrame, getMatches, getPossMatches
 import torch
 
 
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     print('Loading dataframes...')
     adf = pd.read_csv(Path(f'{datapath}/GameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
     bdf = pd.read_csv(Path(f'{datapath}/GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
-    av_other_df = pd.read_csv(Path(f'{datapath}/Averages.csv')).set_index(['season', 'tid'])
+    av_other_df = pd.read_csv(Path(f'{datapath}/GaussAverages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0).sort_index()
     bdf = bdf.loc(axis=0)[:, 2004:].sort_index()
@@ -138,6 +138,32 @@ if __name__ == '__main__':
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
             torch.save([t_hist, o_hist, t_av, o_av, np.float32(row['t_score'] > row['o_score'])],
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+
+    # This is for predicting possible matchups
+    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+        if season == 2020:
+            continue
+        extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
+        season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
+        if not season_path.exists():
+            os.mkdir(season_path)
+        for idx, row in tqdm(extra_df.iterrows()):
+            try:
+                t_games = adf.loc(axis=0)[:, season, idx[2]]
+                o_games = adf.loc(axis=0)[:, season, idx[3]]
+            except KeyError:
+                continue
+            if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
+                continue
+            t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+            o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+            t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
+            o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
+            # target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
+            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
+                continue
+            torch.save([t_hist, o_hist, t_av, o_av, .5],
                        f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
 
