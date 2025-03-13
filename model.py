@@ -123,12 +123,17 @@ class GameSequencePredictor(LightningModule):
         self.encode0 = nn.Sequential(
             nn.Linear(self.init_size, latent_size),
             nn.SELU(),
+            nn.Dropout(.5),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
             nn.SELU(),
+            nn.Dropout(.5),
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(latent_size + 3, 1),
+            nn.Linear(latent_size * 2 + 3, latent_size),
+            nn.SELU(),
+            nn.Dropout(.5),
+            nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
 
@@ -148,8 +153,7 @@ class GameSequencePredictor(LightningModule):
     def forward(self, x, y, loc):
         x = self.encode(x)
         y = self.encode(y)
-        x = x - y
-        x = self.classifier(torch.cat([x.squeeze(1), loc], dim=-1))
+        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1), loc], dim=-1))
         return x.squeeze(1)
 
     def encode(self, x):

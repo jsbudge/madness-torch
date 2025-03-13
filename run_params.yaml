@@ -79,4 +79,4 @@ seq_predictor:
     weights_path: ./models
     warm_start: False
     save_model: False
-    patience: 50
+    patience: 15
