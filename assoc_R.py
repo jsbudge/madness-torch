@@ -97,6 +97,11 @@ if __name__ == '__main__':
     spellings.loc['mid_tennessee', 'TeamID'] = 1292
     spellings.loc['miss_st', 'TeamID'] = 1280
     spellings.loc['st._thomas_-_minnesota', 'TeamID'] = 1472
+    spellings.loc['queens_university', 'TeamID'] = 1474
+    spellings.loc["saint_joe's", 'TeamID'] = 1386
+    spellings.loc['ul_monroe', 'TeamID'] = 1419
+    spellings.loc['uri', 'TeamID'] = 1348
+    spellings.loc['ut_rio_grande', 'TeamID'] = 1410
 
 
     tspells = spellings.index.values
@@ -109,7 +114,7 @@ if __name__ == '__main__':
     loc_ids = {'C._Carolina': 1157, 'Cent_Conn_St': 1148}
     unknowns = []
     for t in test:
-        san_t = t.lower().replace('state', 'st')# .replace('cent', 'central')
+        san_t = t.lower().replace(' state', ' st')# .replace('cent', 'central')
         if 'cent' in san_t and 'central' not in san_t:
             san_t = san_t.replace('cent', 'central')
         res = process.extractOne(san_t, tspells)
@@ -139,6 +144,9 @@ if __name__ == '__main__':
 
         for i in range(sched.shape[0]):
             row = sched.iloc[i]
+            if np.isnan(row['team_score']):
+                print(f'Found NaN score for {team_name} vs. {row["opponent"]}')
+                continue
             if datetime.strptime(row['date'], '%Y-%m-%d') > (season_start[year] + timedelta(days=132)):
                 continue
             if row['opponent'] in loc_ids.keys():
@@ -160,6 +168,25 @@ if __name__ == '__main__':
                 loc_ids[row['opponent']] = oid
             if gid is not None:
                 gid_ids[row['game_id']] = gid
+
+    # Merge everything together with rosters and box scores
+    roster_df = pd.DataFrame()
+    fdir = Path(f'{datapath}/{yr_str}/rosters')
+    datafiles = [Path(g) for g in glob(f'{fdir}/*.csv')]
+    for d in tqdm(datafiles):
+        tid = loc_ids[d.stem.replace('_roster', '')]
+        dt = pd.read_csv(f'{d}')
+        dt = dt[['player_id', 'position', 'height', 'weight', 'class']]
+        dt['tid'] = tid
+        dt['season'] = year
+        roster_df = pd.concat((roster_df, dt))
+
+    fdir = Path(f'{datapath}/{yr_str}/box_scores')
+    datafiles = [Path(g) for g in glob(f'{fdir}/*/*.csv')]
+    for d in datafiles:
+        game_id = int(d.stem)
+        dt = pd.read_csv(f'{d}').dropna()
+
 
 
 
