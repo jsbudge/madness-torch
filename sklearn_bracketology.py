@@ -17,7 +17,7 @@ from wrappers import SKLearnWrapper
 
 def runEstimator(feats, feat_name, df):
     s0, s1 = getMatches(df, feats)
-    res = [[], [], []]
+    res = [[], []]
     for season in list(set(s0.index.get_level_values(1))):
         Xt0 = s0.loc[s0.index.get_level_values(1) != season]
         Xt1 = s1.loc[s0.index.get_level_values(1) != season]
@@ -25,31 +25,24 @@ def runEstimator(feats, feat_name, df):
         Xs1 = s1.loc[s0.index.get_level_values(1) == season]
         yt = df.loc[s0.index.get_level_values(1) != season, 'Truth']
 
-        rfc = SKLearnWrapper(RandomForestClassifier(n_estimators=1000, criterion='log_loss'))
+        rfc = SKLearnWrapper(RandomForestClassifier(n_estimators=250, criterion='log_loss', max_features=None))
         rfc.fit(Xt0 - Xt1, yt)
         df.loc[Xs0.index, f'RFC_{feat_name}'] = rfc(Xs0 - Xs1)
-        gpc = SKLearnWrapper(GaussianProcessClassifier(kernel=kernels.RBF(150.)))
+        gpc = SKLearnWrapper(GaussianProcessClassifier(kernel=kernels.RBF(100.)))
         gpc.fit(Xt0 - Xt1, yt)
         df.loc[Xs0.index, f'GPC_{feat_name}'] = gpc(Xs0 - Xs1)
-        ada = SKLearnWrapper(AdaBoostClassifier(n_estimators=1000))
-        ada.fit(Xt0 - Xt1, yt)
-        df.loc[Xs0.index, f'ADA_{feat_name}'] = ada(Xs0 - Xs1)
         truth_br = generateBracket(season, True, datapath=datapath)
         test = generateBracket(season, True, datapath=datapath)
         ps = getPossMatches(feats, season, diff=True, datapath=datapath)
         rfc_results = pd.DataFrame(index=ps.index, columns=['Res'], data=rfc(ps))
         gpc_results = pd.DataFrame(index=ps.index, columns=['Res'], data=gpc(ps))
-        ada_results = pd.DataFrame(index=ps.index, columns=['Res'], data=ada(ps))
-        for r in range(1000):
-            test = applyResultsToBracket(test, rfc_results, select_random=True, random_limit=.1)
+        for r in range(200):
+            test = applyResultsToBracket(test, rfc_results, select_random=True, random_limit=.05)
             res[0].append(scoreBracket(test, truth_br))
-            test = applyResultsToBracket(test, gpc_results, select_random=True, random_limit=.1)
+            test = applyResultsToBracket(test, gpc_results, select_random=True, random_limit=.05)
             res[1].append(scoreBracket(test, truth_br))
-            test = applyResultsToBracket(test, ada_results, select_random=True, random_limit=.1)
-            res[2].append(scoreBracket(test, truth_br))
     print(f'RFC_{feat_name} overall had a mean score of {np.mean(res[0])} and std of {np.std(res[0])}')
     print(f'GPC_{feat_name} overall had a mean score of {np.mean(res[1])} and std of {np.std(res[1])}')
-    print(f'ADA_{feat_name} overall had a mean score of {np.mean(res[2])} and std of {np.std(res[2])}')
     return df
 
 if __name__ == '__main__':

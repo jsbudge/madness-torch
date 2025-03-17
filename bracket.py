@@ -150,7 +150,7 @@ class Bracket(object):
         for pre, fill, node in RenderTree(self.root, style=AsciiStyle()):
             treestr = pre + node.id + ' ' + tnames[node.tid]
             if hasattr(node, 'win_perc') and node.has_children:
-                wp = node.win_perc if node.win_perc > .5 else 1 - node.win_perc
+                wp = node.win_perc  # if node.win_perc > .5 else 1 - node.win_perc
                 treestr += f': {100 * wp:.2f}%'
             rstr += '\n' + treestr.ljust(4)
         return rstr
@@ -177,7 +177,9 @@ class Bracket(object):
         return sample
 
 
-def buildSubmission(menbrackets: list, womenbrackets: list, save_file_path: str = None):
+def buildSubmission(datapath: str = None, save_file_path: str = None):
+    extra_df, extra0_df = getPossMatches(avodf, season=season, use_seed=False, datapath=datapath)
+    ew_df, ew0_df = getPossMatches(avodf, season=season, datapath=datapath, use_seed=False, gender='W')
     master_sub = pd.read_csv('./data/sample_submission.csv')
     rounds = menbrackets[0].getRounds()
     res = pd.DataFrame()
@@ -225,9 +227,11 @@ def applyResultsToBracket(br: Bracket, res: pd.DataFrame,
             if gm.has_children:
                 gm_res = res.loc(axis=0)[:, :, gm.children[0].tid, gm.children[1].tid]['Res'].values[0]
                 gm.win_perc = gm_res
-                if select_random and abs(gm_res - .5) * 2 < random_limit:
-                    gm.tid = gm.children[1].tid if np.random.rand() < gm_res else gm.children[0].tid
-                    gm.slot_win = gm.children[1].slot_win if np.random.rand() < gm_res else gm.children[0].slot_win
+                if select_random and abs(gm_res - .5) < random_limit:
+                    flipwin = np.random.rand() < gm_res
+                    gm.tid = gm.children[1].tid if flipwin else gm.children[0].tid
+                    gm.slot_win = gm.children[1].slot_win if flipwin else gm.children[0].slot_win
+                    gm.win_perc = 1. - gm_res if not flipwin else gm_res
                 else:
                     gm.tid = gm.children[1].tid if gm_res > .5 else gm.children[0].tid
                     gm.slot_win = gm.children[1].slot_win if gm_res > .5 else gm.children[0].slot_win

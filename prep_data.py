@@ -49,7 +49,7 @@ if __name__ == '__main__':
 
     # Averaging using various methods over whole dataset, not averages
     # Save these as different datasets for training
-    '''for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
+    for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         if method == 'Simple':
             avdf = adf.groupby(['season', 'tid']).mean()
         elif method == 'Gauss':
@@ -78,10 +78,10 @@ if __name__ == '__main__':
         avdf_norm = normalize(avdf)
         avdf_norm = avdf_norm.merge(avodf, left_index=True, right_index=True)
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Normalized{method}Averages.csv'))
-        print(f'Saved {method}')'''
+        print(f'Saved {method}')
 
     # Build dataset for training averaging method using last 5 games
-    onehot = OneHotEncoder(sparse_output=False)
+    '''onehot = OneHotEncoder(sparse_output=False)
     han = onehot.fit_transform(bdf[['gloc']])
     adf['daynum'] = bdf['daynum']
     adf[['home', 'away', 'neutral']] = han
@@ -105,13 +105,20 @@ if __name__ == '__main__':
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
             torch.save([t_hist, o_hist, target_hist, np.float32(res['t_score'] > res['o_score'])],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
 
     # Apply same logic to tournament data
+    avodf = normalize(avodf)
     adf = normalize(adf)
     tdf = pd.read_csv(Path(f'{datapath}/MNCAATourneyCompactResults.csv'))
-    tdf = prepFrame(pd.concat((tdf, pd.read_csv(Path(f'{datapath}/WNCAATourneyCompactResults.csv'))),
-                              ignore_index=True)).sort_index()
+    tdf = pd.concat((tdf, pd.read_csv(Path(f'{datapath}/WNCAATourneyCompactResults.csv'))),
+                    ignore_index=True)
+    sdf = pd.read_csv(Path(f'{datapath}/MSecondaryTourneyCompactResults.csv'))
+    sdf = pd.concat((sdf, pd.read_csv(Path(f'{datapath}/WSecondaryTourneyCompactResults.csv'))),
+                    ignore_index=True)
+    tdf = prepFrame(pd.concat((tdf, sdf), ignore_index=True)).sort_index()
+    tdf = tdf.loc(axis=0)[:, 2004:]
+    extra_df, extra0_df = getMatches(tdf, avodf)
     for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         season_path = Path(f'{config["load_data"]["save_path"]}/t{season}')
         if not season_path.exists():
@@ -131,17 +138,25 @@ if __name__ == '__main__':
                 continue
             t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
             o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
+            te_data = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
+            oe_data = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
-            torch.save([t_hist, o_hist, target_hist, np.float32(row['t_score'] > row['o_score'])],
+            torch.save([t_hist, o_hist, te_data, oe_data, np.float32(row['t_score'] > row['o_score'])],
                        f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
     # This is for predicting possible matchups
-    '''for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
         if season == 2020:
             continue
         extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
+        ew_df, ew0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='W')
+        extra_df = pd.concat((extra_df.reset_index(), ew_df.reset_index()), ignore_index=True)
+        extra_df['gid'] = np.arange(extra_df.shape[0])
+        extra0_df = pd.concat((extra0_df.reset_index(), ew0_df.reset_index()), ignore_index=True)
+        extra0_df['gid'] = np.arange(extra0_df.shape[0])
+        extra_df = extra_df.set_index(['gid', 'season', 'tid', 'oid'])
+        extra0_df = extra0_df.set_index(['gid', 'season', 'tid', 'oid'])
         season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
         if not season_path.exists():
             os.mkdir(season_path)
@@ -157,11 +172,10 @@ if __name__ == '__main__':
             o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
             t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
             o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            target_hist = torch.tensor([0., 0., 1.], dtype=torch.float32)
             if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
                 continue
-            torch.save([t_hist, o_hist, target_hist, .5],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
+            torch.save([t_hist, o_hist, t_av, o_av, .5],
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
 
 
 

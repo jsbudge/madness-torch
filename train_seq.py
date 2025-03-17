@@ -4,6 +4,8 @@ import pandas as pd
 import torch
 from pytorch_lightning import Trainer, loggers, seed_everything
 from pytorch_lightning.callbacks import EarlyStopping, StochasticWeightAveraging, ModelCheckpoint
+
+from bracket import generateBracket, applyResultsToBracket, scoreBracket
 from dataloader import GameDataModule
 from model import GameSequencePredictor
 import numpy as np
@@ -29,6 +31,7 @@ if __name__ == '__main__':
 
     # Get the model, experiment, logger set up
     config['seq_predictor']['init_size'] = data.train_dataset.data_len
+    config['seq_predictor']['extra_size'] = data.train_dataset.extra_len
     mdl_name = f"{config['seq_predictor']['name']}"
     model = GameSequencePredictor(**config['seq_predictor'])
     logger = loggers.TensorBoardLogger(config['seq_predictor']['training']['log_dir'], name=mdl_name)
@@ -70,9 +73,10 @@ if __name__ == '__main__':
             ch_d = [torch.load(g) for g in files]
             t_data = torch.cat([c[0].unsqueeze(0) for c in ch_d], dim=0)
             o_data = torch.cat([c[1].unsqueeze(0) for c in ch_d], dim=0)
-            loc_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
-            targets = np.array([c[3] for c in ch_d])
-            predictions = model(t_data, o_data, loc_data).detach().numpy()
+            tav_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
+            oav_data = torch.cat([c[3].unsqueeze(0) for c in ch_d], dim=0)
+            targets = np.array([c[4] for c in ch_d])
+            predictions = model(t_data, o_data, tav_data, oav_data).detach().numpy()
 
             file_data = [Path(c).stem for c in files]
             gid = [int(c.split('_')[0]) for c in file_data]
@@ -86,6 +90,36 @@ if __name__ == '__main__':
     corrects = sum(np.round(results['Res']) - results['truth'] == 0) / results.shape[0]
     # config.season
     print(f'{corrects} correct.')
+
+    poss_results = pd.DataFrame()
+    season = 2025
+    dp = f'{datapath}/p{season}'
+    if Path(f'{datapath}/{season}').exists():
+        files = glob(f'{dp}/*.pt')
+        if len(files) > 0:
+            ch_d = [torch.load(g) for g in files]
+            t_data = torch.cat([c[0].unsqueeze(0) for c in ch_d], dim=0)
+            o_data = torch.cat([c[1].unsqueeze(0) for c in ch_d], dim=0)
+            tav_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
+            oav_data = torch.cat([c[3].unsqueeze(0) for c in ch_d], dim=0)
+            targets = np.array([c[4] for c in ch_d])
+            predictions = 1 - model(t_data, o_data, tav_data, oav_data).detach().numpy()
+
+            file_data = [Path(c).stem for c in files]
+            gid = [int(c.split('_')[0]) for c in file_data]
+            tid = [int(c.split('_')[1]) for c in file_data]
+            oid = [int(c.split('_')[2]) for c in file_data]
+            seas = [season for _ in file_data]
+            poss_results = pd.concat((poss_results,
+                                 pd.DataFrame(data=np.stack([gid, seas, tid, oid, predictions, targets]).T,
+                                              columns=['gid', 'season', 'tid', 'oid', 'Res', 'truth'])))
+    poss_results = poss_results.set_index(['gid', 'season', 'tid', 'oid'])
+    truth_br = generateBracket(season, True, datapath=datapath)
+    test = generateBracket(season, True, datapath=datapath)
+    res = []
+    for r in range(100):
+        test = applyResultsToBracket(test, poss_results, select_random=True, random_limit=.1)
+        res.append(scoreBracket(test, truth_br))
 
 
 

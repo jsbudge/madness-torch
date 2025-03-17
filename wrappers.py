@@ -42,8 +42,8 @@ class SeasonalSplit:
     def split(self, X, y=None):
         seasons = list(set(X.index.get_level_values(1)))
         for s in seasons:
-            tidxes = np.arange(X.shape)[X.index.get_level_values(1) == s]
-            sidxes = np.arange(X.shape)[X.index.get_level_values(1) != s]
+            tidxes = np.arange(X.shape[0])[X.index.get_level_values(1) == s]
+            sidxes = np.arange(X.shape[0])[X.index.get_level_values(1) != s]
             yield tidxes, sidxes
 
     def get_n_splits(self, X, y=None, groups=None):

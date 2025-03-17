@@ -6,6 +6,8 @@ import yaml
 from wrappers import SeasonalSplit
 from load_data import prepFrame, getMatches
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import Matern, RBF, RationalQuadratic
 
 if __name__ == '__main__':
     with open('./run_params.yaml', 'r') as file:
@@ -24,13 +26,12 @@ if __name__ == '__main__':
     tmatch = getMatches(tdata, feats, diff=True)
     labels = (tdata['t_score'] - tdata['o_score']) > 0
     cv = SeasonalSplit()
-    rfc = RandomForestClassifier()
+    gpc = GaussianProcessClassifier()
 
-    params = {'n_estimators': [10, 50, 100, 250, 1000], 'criterion': ['gini', 'log_loss'],
-              'max_features': [15, 'sqrt', 'log2', None]}
+    params = {'kernel': [Matern(nu=1.5), Matern(nu=2.5), Matern(), Matern(nu=25), RBF(1.0), RBF(100.), RBF(10.), RBF(1000.), RationalQuadratic()]}
     # pgrid = ParameterGrid(params)
 
-    gscv = GridSearchCV(rfc, param_grid=params, cv=cv.split(tmatch, labels))
+    gscv = GridSearchCV(gpc, param_grid=params, cv=cv.split(tmatch, labels), verbose=2)
     gscv.fit(tmatch, labels)
 
     '''for xs, xt in cv.split(tdata, labels):

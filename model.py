@@ -108,11 +108,12 @@ class Predictor(LightningModule):
 
 class GameSequencePredictor(LightningModule):
 
-    def __init__(self, init_size: int = 256, latent_size: int = 22, in_channels: int = 5,
+    def __init__(self, init_size: int = 256, latent_size: int = 22, extra_size: int = 93, in_channels: int = 5,
                  lr: float = 1e-5, weight_decay: float = 0.0, scheduler_gamma: float = .7,
                  betas: tuple[float, float] = (.9, .99), *args, **kwargs):
         super().__init__()
         self.init_size = init_size
+        self.extra_size = extra_size
         self.latent_size = latent_size
         self.output_size = 1
         self.automatic_optimization = False
@@ -123,16 +124,20 @@ class GameSequencePredictor(LightningModule):
         self.encode0 = nn.Sequential(
             nn.Linear(self.init_size, latent_size),
             nn.SELU(),
-            nn.Dropout(.5),
+            nn.Dropout(.4),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
             nn.SELU(),
-            nn.Dropout(.5),
+            nn.Dropout(.4),
+        )
+
+        self.encode1 = nn.Sequential(
+            nn.Linear(extra_size, latent_size),
+            nn.SELU(),
+            nn.Dropout(.4),
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(latent_size * 2 + 3, latent_size),
-            nn.SELU(),
-            nn.Dropout(.5),
+            nn.Linear(latent_size * 4, latent_size),
             nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
@@ -150,10 +155,12 @@ class GameSequencePredictor(LightningModule):
 
         self.latent = latent_size
 
-    def forward(self, x, y, loc):
+    def forward(self, x, y, tav, oav):
         x = self.encode(x)
+        xav = self.av_encode(tav)
         y = self.encode(y)
-        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1), loc], dim=-1))
+        yav = self.av_encode(oav)
+        x = self.classifier(torch.cat([x.squeeze(1), y.squeeze(1), xav, yav], dim=-1))
         return x.squeeze(1)
 
     def encode(self, x):
@@ -161,8 +168,11 @@ class GameSequencePredictor(LightningModule):
         x = self.encode0(x)
         return x
 
+    def av_encode(self, x):
+        return self.encode1(x)
+
     def loss_function(self, y_pred, y):
-        return tf.binary_cross_entropy(y_pred, y)
+        return brier_score(y_pred, y)
 
     def on_fit_start(self) -> None:
         if self.trainer.is_global_zero and self.logger:
@@ -205,9 +215,9 @@ class GameSequencePredictor(LightningModule):
         return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def train_val_get(self, batch, batch_idx, kind='train'):
-        team, opp, loc, targets = batch
+        team, opp, tav, oav, targets = batch
 
-        results = self.forward(team, opp, loc)
+        results = self.forward(team, opp, tav, oav)
         train_loss = self.loss_function(results, targets)
 
         self.log_dict({f'{kind}_loss': train_loss}, on_epoch=True,
@@ -237,3 +247,17 @@ def positional_encoding(
     vp = coeffs * torch.unsqueeze(v, -1)
     vp_cat = torch.cat((torch.cos(vp), torch.sin(vp)), dim=-1)
     return vp_cat.flatten(-2, -1)
+
+
+def brier_score(predictions, targets):
+    """
+    Calculates the Brier score.
+
+    Args:
+        predictions (torch.Tensor): Predicted probabilities (values between 0 and 1).
+        targets (torch.Tensor): True binary labels (0 or 1).
+
+    Returns:
+        torch.Tensor: The Brier score.
+    """
+    return torch.mean((predictions - targets.float())**2)

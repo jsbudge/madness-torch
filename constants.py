@@ -57,3 +57,6 @@ state_abbreviations = {
         'WV': 'West Virginia',
         'WY': 'Wyoming'
 }
+
+position_mapping = {'G': 1, 'F': 3, 'C': 5}
+exp_mapping = {'FR': 0, 'SO': 1, 'JR': 2, 'SR': 3}

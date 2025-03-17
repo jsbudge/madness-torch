@@ -17,7 +17,8 @@ from load_data import getMatches, normalize, prepFrame
 
 
 def gd_collate(batch):
-    return torch.stack([b[0] for b in batch]), torch.stack([b[1] for b in batch]), torch.stack([b[2] for b in batch]), torch.tensor([b[3] for b in batch])
+    return (torch.stack([b[0] for b in batch]), torch.stack([b[1] for b in batch]), torch.stack([b[2] for b in batch]),
+            torch.stack([b[3] for b in batch]), torch.tensor([b[4] for b in batch]))
 
 
 class GameDataset(Dataset):
@@ -25,12 +26,12 @@ class GameDataset(Dataset):
         # Load in data
         self.datapath = datapath
         self.data = []
-        for s in range(2004, 2025):
-            dp = f'{datapath}/t{s}' if is_val else f'{datapath}/{s}'
+        '''for s in range(2004, 2025):
+            dp = f'{datapath}/t{s}' if not is_val else f'{datapath}/{s}'
             if Path(dp).exists():
-                self.data.append(glob(f'{dp}/*.pt'))
-        '''if season is None:
-            start = 2010 if not is_val else 2021
+                self.data.append(glob(f'{dp}/*.pt'))'''
+        if season is None:
+            start = 2004 if not is_val else 2021
             end = 2021 if not is_val else 2025
             for s in range(start, end):
                 dp = f'{datapath}/t{s}'
@@ -45,13 +46,14 @@ class GameDataset(Dataset):
                 elif s != season and not is_val:
                     dp = f'{datapath}/t{s}'
                     if Path(dp).exists():
-                        self.data.append(glob(f'{dp}/*.pt'))'''
+                        self.data.append(glob(f'{dp}/*.pt'))
         self.data = np.concatenate(self.data)
         np.random.shuffle(self.data)
         # Xt, Xs = train_test_split(self.data, random_state=seed)
         # self.data = Xs if is_val else Xt
         check = torch.load(self.data[0])
         self.data_len = check[0].shape[-1]
+        self.extra_len = check[2].shape[-1]
 
     def __getitem__(self, idx):
         return torch.load(self.data[idx])
