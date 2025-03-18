@@ -67,7 +67,7 @@ if __name__ == '__main__':
     season = config['dataloader']['season']
     results = pd.DataFrame()
     dp = f'{datapath}/t{season}'
-    if Path(f'{datapath}/{season}').exists():
+    if Path(f'{datapath}/t{season}').exists():
         files = glob(f'{dp}/*.pt')
         if len(files) > 0:
             ch_d = [torch.load(g) for g in files]
@@ -92,9 +92,9 @@ if __name__ == '__main__':
     print(f'{corrects} correct.')
 
     poss_results = pd.DataFrame()
-    season = 2025
+    season = 2023
     dp = f'{datapath}/p{season}'
-    if Path(f'{datapath}/{season}').exists():
+    if Path(dp).exists():
         files = glob(f'{dp}/*.pt')
         if len(files) > 0:
             ch_d = [torch.load(g) for g in files]

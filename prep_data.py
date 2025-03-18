@@ -41,7 +41,7 @@ if __name__ == '__main__':
     print('Loading dataframes...')
     adf = pd.read_csv(Path(f'{datapath}/GameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
     bdf = pd.read_csv(Path(f'{datapath}/GameDataBasic.csv')).set_index(['gid', 'season', 'tid', 'oid'])[['gloc', 'daynum', 't_score', 'o_score']]
-    av_other_df = pd.read_csv(Path(f'{datapath}/GaussAverages.csv')).set_index(['season', 'tid'])
+    av_other_df = pd.read_csv(Path(f'{datapath}/Averages.csv')).set_index(['season', 'tid'])
     avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     adf = adf.loc(axis=0)[:, 2004:].drop(columns=['numot']).fillna(0).sort_index()
     bdf = bdf.loc(axis=0)[:, 2004:].sort_index()
@@ -108,6 +108,8 @@ if __name__ == '__main__':
                        f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
 
     # Apply same logic to tournament data
+    av_other_df = pd.read_csv(Path(f'{datapath}/NormalizedGaussAverages.csv')).set_index(['season', 'tid'])
+    avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
     avodf = normalize(avodf)
     adf = normalize(adf)
     tdf = pd.read_csv(Path(f'{datapath}/MNCAATourneyCompactResults.csv'))
@@ -150,13 +152,30 @@ if __name__ == '__main__':
         if season == 2020:
             continue
         extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
-        ew_df, ew0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='W')
-        extra_df = pd.concat((extra_df.reset_index(), ew_df.reset_index()), ignore_index=True)
-        extra_df['gid'] = np.arange(extra_df.shape[0])
-        extra0_df = pd.concat((extra0_df.reset_index(), ew0_df.reset_index()), ignore_index=True)
-        extra0_df['gid'] = np.arange(extra0_df.shape[0])
-        extra_df = extra_df.set_index(['gid', 'season', 'tid', 'oid'])
-        extra0_df = extra0_df.set_index(['gid', 'season', 'tid', 'oid'])
+        season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
+        if not season_path.exists():
+            os.mkdir(season_path)
+        for idx, row in tqdm(extra_df.iterrows()):
+            try:
+                t_games = adf.loc(axis=0)[:, season, idx[2]]
+                o_games = adf.loc(axis=0)[:, season, idx[3]]
+            except KeyError:
+                continue
+            if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
+                continue
+            t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+            o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+            t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
+            o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
+            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
+                continue
+            torch.save([t_hist, o_hist, t_av, o_av, .5],
+                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
+
+    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
+        if season == 2020:
+            continue
+        extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='W')
         season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
         if not season_path.exists():
             os.mkdir(season_path)

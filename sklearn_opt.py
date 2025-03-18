@@ -8,6 +8,7 @@ from load_data import prepFrame, getMatches
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import Matern, RBF, RationalQuadratic
+from sklearn.metrics import brier_score_loss
 
 if __name__ == '__main__':
     with open('./run_params.yaml', 'r') as file:
@@ -16,7 +17,7 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
-    fnme = 'SimpleAverages'
+    fnme = 'GaussAverages'
 
     datapath = config['dataloader']['datapath']
     tdata = pd.read_csv(Path(f'{datapath}/MNCAATourneyCompactResults.csv'))
@@ -31,7 +32,7 @@ if __name__ == '__main__':
     params = {'kernel': [Matern(nu=1.5), Matern(nu=2.5), Matern(), Matern(nu=25), RBF(1.0), RBF(100.), RBF(10.), RBF(1000.), RationalQuadratic()]}
     # pgrid = ParameterGrid(params)
 
-    gscv = GridSearchCV(gpc, param_grid=params, cv=cv.split(tmatch, labels), verbose=2)
+    gscv = GridSearchCV(gpc, param_grid=params, cv=cv.split(tmatch, labels), verbose=2, scoring='neg_brier_score')
     gscv.fit(tmatch, labels)
 
     '''for xs, xt in cv.split(tdata, labels):

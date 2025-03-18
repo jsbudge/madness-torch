@@ -14,45 +14,32 @@ ELO_MEAN = 1500.
 G2_MEAN = 1500.
 G2_PHI = 350.
 G2_SIGMA = .06
+G2_SCALE = 173.7178
 
 
-def illinois_method(func, a, b, tol=1e-5, max_iter=100):
-    """
-    Finds the root of a function using the Illinois method.
-
-    Args:
-        func: The function for which to find the root.
-        a: The left endpoint of the initial interval.
-        b: The right endpoint of the initial interval.
-        tol: The desired tolerance for the root.
-        max_iter: The maximum number of iterations.
-
-    Returns:
-        A tuple containing the approximate root and the number of iterations, or None if it fails.
-    """
-
-    fa = func(a)
-    fb = func(b)
-
-    if fa * fb >= 0:
-        return None, 0  # No root in the interval
-
-    for i in range(max_iter):
-        c = b - fb * (b - a) / (fb - fa)
-        fc = func(c)
-
-        if abs(fc) < tol:
-            return c, i + 1
-
-        if fa * fc < 0:
-            b = c
-            fb = fc
+def g2_A(delta, phi, v, tau, sigma):
+    fx = lambda x: (np.exp(x) * (delta**2 - phi**2 - v - np.exp(x)) / (2 * (phi**2 + v + np.exp(x))**2)) - (x - np.log(sigma**2)) / tau**2
+    A = np.log(sigma**2)
+    if delta**2 > phi**2 + v:
+        B = np.log(delta**2 - phi**2 - v)
+    else:
+        k = 1
+        while fx(A - k * tau) < 0:
+            k += 1
+        B = A - k * tau
+    fa = fx(A)
+    fb = fx(B)
+    while abs(B - A) > 1e-6:
+        C = A + (A - B) * fa / (fb - fa)
+        fc = fx(C)
+        if fc * fb <= 0:
+            A = B
+            fa = fb
         else:
-            a = c
-            fa = fc
-            fb /= 2  # Illinois modification
-
-    return None, max_iter  # Fails to converge
+            fa = fa / 2
+        B = C
+        fb = fc
+    return np.exp(A / 2)
 
 
 def load(dtype='adv', datapath=None):
@@ -483,103 +470,83 @@ if __name__ == '__main__':
 
     # Run Glicko ratings
     print('Running g2 ratings...')
-    g2df = prepFrame(mcdf, False).drop(columns=['gloc', 'numot'])
+    g2df = prepFrame(mcdf, True).drop(columns=['gloc', 'numot'])
+    g2df['s'] = g2df['t_score'] > g2df['o_score']
     tids = list(set(g2df.index.get_level_values(2)))
 
     g2df = g2df.sort_values(by=['season', 'daynum'])
-    g2df['mov'] = g2df['t_score'] - g2df['o_score']
-    g2df['t_g2'] = G2_MEAN
-    g2df['o_g2'] = G2_MEAN
-    g2df['t_g2phi'] = G2_PHI
-    g2df['o_g2phi'] = G2_PHI
-    g2df['t_g2sig'] = G2_SIGMA
-    g2df['o_g2sig'] = G2_SIGMA
+
     g_phi = lambda x: 1 / np.sqrt(1 + 3 * x**2 / np.pi**2)
     ex_mu = lambda mu, mu_j, phi_j: 1 / (1 + np.exp(-g_phi(phi_j) * (mu - mu_j)))
 
     def runG2(x):
-        g2array = g2df.reset_index().values
-        curr_g2 = np.ones(max(tids) + 1) * G2_MEAN
-        curr_phi = np.ones(max(tids) + 1) * G2_PHI
+        g2_final = g2df.groupby(['season', 'tid']).mean()
+        curr_g2 = np.zeros(max(tids) + 1)
+        curr_phi = np.ones(max(tids) + 1) * G2_PHI / G2_SCALE
         curr_sig = np.ones(max(tids) + 1) * G2_SIGMA
-        curr_seas = 2002
         tau = x[0]
-        mu_reg = x[1]
-        for n in range(g2array.shape[0]):
-            if curr_seas != g2array[n, 1]:
-                # Regress everything to the mean
-                for val, sig in zip(curr_phi, curr_sig):
-                    val = np.sqrt((val / 173.7178)**2 + sig**2) * 173.7178
-            curr_seas = g2array[n, 1]
-            t_g2 = curr_g2[int(g2array[n, 2])]
-            o_g2 = curr_g2[int(g2array[n, 3])]
-            g2array[n, 8:10] = [t_g2, o_g2]
-            t_g2 = (t_g2 - G2_MEAN) / 173.7178
-            o_g2 = (o_g2 - G2_MEAN) / 173.7178
-            t_phi = curr_phi[int(g2array[n, 2])]
-            o_phi = curr_phi[int(g2array[n, 3])]
-            g2array[n, 10:12] = [t_phi, o_phi]
-            t_phi = t_phi / 173.7178
-            o_phi = o_phi / 173.7178
-            t_sig = curr_sig[int(g2array[n, 2])]
-            o_sig = curr_sig[int(g2array[n, 3])]
-            g2array[n, 12:14] = [t_sig, o_sig]
+        # First half of the season
+        for season in tqdm(np.sort(list(set(g2df.index.get_level_values(1))))):
+            curr_phi = np.sqrt(curr_phi**2 + curr_sig**2)
+            g2half1 = g2df.loc(axis=0)[:, season]
+            g2half2 = g2half1.loc[g2half1['daynum'] > 66]
+            g2half1 = g2half1.loc[g2half1['daynum'] <= 66]
+            g2half1[['t_g2', 'o_g2', 't_phi', 'o_phi', 't_sig']] = np.array([curr_g2[g2half1.index.get_level_values(2)],
+                                                                     curr_g2[g2half1.index.get_level_values(3)],
+                                                                    curr_phi[g2half1.index.get_level_values(2)],
+                                                                    curr_phi[g2half1.index.get_level_values(3)],
+                                                                    curr_sig[g2half1.index.get_level_values(2)]]).T
+            g2half1['em'] = ex_mu(g2half1['t_g2'], g2half1['o_g2'], g2half1['o_phi'])
+            g2half1['gphi'] = g_phi(g2half1['o_phi'])
+            v = 1 / (g2half1['gphi']**2 * g2half1['em'] * (1 - g2half1['em'])).groupby(['tid']).sum()
+            delta = v * (g2half1['gphi'] * g2half1['s'] - g2half1['em']).groupby(['tid']).sum()
+            for idx, val in v.items():
+                curr_sig[idx] = min(g2_A(delta.loc[idx], curr_phi[idx], val, tau, curr_sig[idx]), 1.)
+            curr_phi[v.index] = 1 / np.sqrt(1 / (curr_phi[v.index]**2 + curr_sig[v.index]**2) + 1 / val)
+            curr_g2[v.index] += curr_phi[v.index]**2 * delta / val
 
-            # Calculate out v and delta
-            s = 1 if g2array[n, 7] > 0 else 0
-            em = ex_mu(t_g2, o_g2, o_phi)
-            gp = g_phi(o_phi)
-            v = 1 / (gp**2 * em * (1 - em))
-            delta = v * gp * (s - em)
-            A_func = lambda x: (.5 * (np.exp(x) * (delta**2 - t_phi**2 - v - np.exp(x))) /
-                                (t_phi**2 + v + np.exp(x))**2 - (x - np.log(t_sig**2)) / tau)
-            A = illinois_method(A_func, -100, 100)[0]
-            sig_prime = np.exp(A / 2)
-            phi_prime = 1 / np.sqrt(1 / (t_phi**2 + sig_prime**2) + 1 / v)
-            mu_prime = phi_prime**2 * gp * (s - em)
-            curr_sig[int(g2array[n, 2])] = sig_prime
-            curr_phi[int(g2array[n, 2])] = phi_prime * 173.7178
-            curr_g2[int(g2array[n, 2])] = mu_prime * 173.7178 + G2_MEAN
+            curr_g2[curr_g2 >= 5] = 5
+            curr_g2[curr_g2 <= -5] = -5
 
-            # Re-run with opponent to update their g2
-            s = 1 if g2array[n, 7] < 0 else 0
-            em = ex_mu(o_g2, t_g2, t_phi)
-            gp = g_phi(t_phi)
-            v = 1 / (gp ** 2 * em * (1 - em))
-            delta = v * gp * (s - em)
-            A_func = lambda x: (.5 * (np.exp(x) * (delta ** 2 - o_phi ** 2 - v - np.exp(x))) /
-                                (o_phi ** 2 + v + np.exp(x)) ** 2 - (x - np.log(t_sig ** 2)) / tau)
-            A = illinois_method(A_func, -100, 100)[0]
-            sig_prime = np.exp(A / 2)
-            phi_prime = 1 / np.sqrt(1 / (o_phi ** 2 + sig_prime ** 2) + 1 / v)
-            mu_prime = phi_prime ** 2 * gp * (s - em)
-            curr_sig[int(g2array[n, 3])] = sig_prime
-            curr_phi[int(g2array[n, 3])] = phi_prime * 173.7178
-            curr_g2[int(g2array[n, 3])] = mu_prime * 173.7178 + G2_MEAN
-        return g2array
+            g2half2[['t_g2', 'o_g2', 't_phi', 'o_phi', 't_sig']] = np.array([curr_g2[g2half2.index.get_level_values(2)],
+                                                                             curr_g2[g2half2.index.get_level_values(3)],
+                                                                             curr_phi[
+                                                                                 g2half2.index.get_level_values(2)],
+                                                                             curr_phi[
+                                                                                 g2half2.index.get_level_values(3)],
+                                                                             curr_sig[
+                                                                                 g2half2.index.get_level_values(2)]]).T
+            g2half2['em'] = ex_mu(g2half2['t_g2'], g2half2['o_g2'], g2half2['o_phi'])
+            g2half2['gphi'] = g_phi(g2half2['o_phi'])
+            v = 1 / (g2half2['gphi'] ** 2 * g2half2['em'] * (1 - g2half2['em'])).groupby(['tid']).sum()
+            delta = v * (g2half2['gphi'] * g2half2['s'] - g2half2['em']).groupby(['tid']).sum()
+            for idx, val in v.items():
+                curr_sig[idx] = min(g2_A(delta.loc[idx], curr_phi[idx], val, tau, curr_sig[idx]), 1.)
+            curr_phi[v.index] = 1 / np.sqrt(1 / (curr_phi[v.index] ** 2 + curr_sig[v.index] ** 2) + 1 / val)
+            curr_g2[v.index] += curr_phi[v.index] ** 2 * delta / val
 
-    g2_out = runG2([.2, 0.0])
-    g2df = pd.DataFrame(index=g2df.index, columns=g2df.columns, data=g2_out[:, 4:])
+            curr_g2[curr_g2 >= 5] = 5
+            curr_g2[curr_g2 <= -5] = -5
 
-    joiner_df = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].merge(
-        g2df.reset_index()[['season', 'tid', 'oid', 'daynum', 't_g2', 'o_g2']],
-        on=['season', 'tid', 'oid', 'daynum'])
-    joiner_df = joiner_df.set_index(['gid', 'season', 'tid', 'oid'])
+            for idx, grp in g2half2.groupby(['season', 'tid']):
+                g2_final.loc[idx, ['t_g2', 't_g2phi', 't_g2sig']] = [curr_g2[idx[1]], curr_phi[idx[1]], curr_sig[idx[1]]]
+        g2_final['t_g2'] = g2_final['t_g2'] * G2_SCALE + G2_MEAN
+        g2_final['t_g2phi'] *= G2_SCALE
+        return g2_final
 
-    adf.loc[joiner_df.index, ['t_g2', 'o_g2']] = joiner_df[['t_g2', 'o_g2']]
-    adf.loc[np.isnan(adf['t_g2']), ['t_g2', 'o_g2']] = joiner_df[['o_g2', 't_g2']].values
+    g2_out = runG2([1.])
 
-    avdf[['t_g2', 'o_g2']] = adf[['t_g2', 'o_g2']].groupby(['season', 'tid']).mean()
+    avdf[['t_g2', 't_g2phi', 't_g2sig']] = g2_out[['t_g2', 't_g2phi', 't_g2sig']]
 
     # Consolidate massey ordinals in a logical way
-    ord_fnme = Path(f"{config['load_data']['data_path']}/MMasseyOrdinals.csv")
+    '''ord_fnme = Path(f"{config['load_data']['data_path']}/MMasseyOrdinals.csv")
     ord_df = pd.read_csv(ord_fnme)
     ord_df = ord_df.pivot_table(index=['Season', 'TeamID', 'RankingDayNum'], columns=['SystemName'])
     ord_df.columns = ord_df.columns.droplevel(0)
 
     ord_id = sdf.reset_index()[['season', 'tid', 'oid', 'daynum', 'gid']].rename(
         columns={'season': 'Season', 'tid': 'TeamID', 'daynum': 'RankingDayNum'})
-    ord_id = ord_id[ord_id['Season'] > 2002]
+    ord_id = ord_id[ord_id['Season'] > 2002]'''
     # adf[['t_rank', 'o_rank']] = 0.
 
     '''print('Running ranking consolidation...')

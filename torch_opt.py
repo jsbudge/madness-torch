@@ -19,11 +19,12 @@ def objective(trial: optuna.Trial, config=None):
     config['seq_predictor']['latent_size'] = trial.suggest_int('latent_size', 5, 75, 5)
     config['seq_predictor']['lr'] = trial.suggest_categorical('lr', [1., .01, .0001, .000001, .00000001, .0000000001])
     config['seq_predictor']['weight_decay'] = trial.suggest_float('weight_decay', 1e-9, .8, log=True)
-    config['seq_predictor']['scheduler_gamma'] = trial.suggest_float('scheduler_gamma', .5, .9999)
-    config['seq_predictor']['training']['swa_start'] = trial.suggest_float('swa_start', .3, .9)
+    config['seq_predictor']['scheduler_gamma'] = trial.suggest_float('scheduler_gamma', .1, .9999)
+    config['seq_predictor']['betas'] = [trial.suggest_float('beta0', .1, .9999), trial.suggest_float('beta1', .1, .9999)]
+
 
     season_total = []
-    for season in np.random.choice([2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023, 2024], 3):
+    for season in np.random.choice([2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023, 2024], 5):
         config['dataloader']['season'] = season
         # First, run the encoding to try and reduce the dimension of the data
         data = GameDataModule(**config['dataloader'])
@@ -33,17 +34,12 @@ def objective(trial: optuna.Trial, config=None):
         config['seq_predictor']['init_size'] = data.train_dataset.data_len
         config['seq_predictor']['extra_size'] = data.train_dataset.extra_len
         model = GameSequencePredictor(**config['seq_predictor'])
-        expected_lr = max((config['seq_predictor']['lr'] * config['seq_predictor']['scheduler_gamma'] ** (
-                config['seq_predictor']['training']['max_epochs'] *
-                config['seq_predictor']['training']['swa_start'])), 1e-9)
         trainer = Trainer(logger=False, max_epochs=config['seq_predictor']['training']['max_epochs'],
                           default_root_dir=config['seq_predictor']['training']['weights_path'],
                           log_every_n_steps=config['seq_predictor']['training']['log_epoch'],
                           num_sanity_val_steps=0, detect_anomaly=False, callbacks=
                           [EarlyStopping(monitor='val_loss', patience=config['seq_predictor']['training']['patience'],
-                                         check_finite=True),
-                           StochasticWeightAveraging(swa_lrs=expected_lr,
-                                                     swa_epoch_start=config['seq_predictor']['training']['swa_start'])])
+                                         check_finite=True)])
         trainer.fit(model, datamodule=data)
         model.eval()
 
@@ -70,9 +66,9 @@ def objective(trial: optuna.Trial, config=None):
                 truth_br = generateBracket(season, True, datapath=datapath)
                 test = generateBracket(season, True, datapath=datapath)
                 res = 0
-                for r in range(100):
+                for r in range(200):
                     try:
-                        test = applyResultsToBracket(test, small_res, select_random=True, random_limit=.1)
+                        test = applyResultsToBracket(test, small_res, select_random=True, random_limit=.2)
                         res += scoreBracket(test, truth_br) / 100.
                     except KeyError:
                         continue
@@ -91,7 +87,7 @@ if __name__ == '__main__':
 
     study = optuna.create_study(direction='maximize',
                                 storage='sqlite:///db.sqlite3',
-                                study_name='madness2')
+                                study_name='madness_3rd')
     objective = partial(objective, config=config)
     study.optimize(objective, 1000)
 

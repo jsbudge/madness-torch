@@ -144,7 +144,18 @@ class Bracket(object):
     def __getitem__(self, nd_id):
         return self.node_dict[nd_id]
 
-    def __str__(self, datapath = "D:\\\\madness_data\\data"):
+    def __str__(self):
+        tnames = loadTeamNames()
+        rstr = ''
+        for pre, fill, node in RenderTree(self.root, style=AsciiStyle()):
+            treestr = pre + node.id + ' ' + tnames[node.tid]
+            if hasattr(node, 'win_perc') and node.has_children:
+                wp = node.win_perc  # if node.win_perc > .5 else 1 - node.win_perc
+                treestr += f': {100 * wp:.2f}%'
+            rstr += '\n' + treestr.ljust(4)
+        return rstr
+
+    def getBracketString(self, datapath: str = './data'):
         tnames = loadTeamNames(datapath)
         rstr = ''
         for pre, fill, node in RenderTree(self.root, style=AsciiStyle()):
@@ -226,26 +237,21 @@ def applyResultsToBracket(br: Bracket, res: pd.DataFrame,
             gm = br[gmid]
             if gm.has_children:
                 gm_res = res.loc(axis=0)[:, :, gm.children[0].tid, gm.children[1].tid]['Res'].values[0]
-                gm.win_perc = gm_res
-                if select_random and abs(gm_res - .5) < random_limit:
-                    flipwin = np.random.rand() < gm_res
-                    gm.tid = gm.children[1].tid if flipwin else gm.children[0].tid
-                    gm.slot_win = gm.children[1].slot_win if flipwin else gm.children[0].slot_win
-                    gm.win_perc = 1. - gm_res if not flipwin else gm_res
-                else:
-                    gm.tid = gm.children[1].tid if gm_res > .5 else gm.children[0].tid
-                    gm.slot_win = gm.children[1].slot_win if gm_res > .5 else gm.children[0].slot_win
+                flipwin = np.random.rand() < gm_res if (select_random and abs(gm_res - .5) < random_limit) else gm_res > .5
+                gm.tid = gm.children[1].tid if flipwin else gm.children[0].tid
+                gm.slot_win = gm.children[1].slot_win if flipwin else gm.children[0].slot_win
+                gm.win_perc = gm_res if flipwin else 1 - gm_res
     return br
 
 if __name__ == '__main__':
 
     season = 2023
-    datapath = "D:\\\\madness_data\\data"
+    datapath = './data'
     test = generateBracket(season, True, datapath=datapath)
-    feats = pd.read_csv(f'{datapath}\\MAverages.csv').set_index(['season', 'tid'])
+    feats = pd.read_csv(f'{datapath}/Averages.csv').set_index(['season', 'tid'])
 
     df = getPossMatches(feats, season, datapath=datapath)[0]
 
     results = pd.DataFrame(index=df.index, columns=['Res'], data=np.random.rand(df.shape[0]))
 
-    test = applyResultsToBracket(test, results)
+    test = applyResultsToBracket(test, results, select_random=True)
