@@ -1,3 +1,4 @@
+import math
 from typing import Any
 import numpy as np
 from bayesian_torch.models.dnn_to_bnn import dnn_to_bnn
@@ -6,11 +7,19 @@ from pytorch_lightning import LightningModule
 from torch import nn, Tensor
 from torch.nn import functional as tf
 
-
-def init_weights(m):
-    if isinstance(m, nn.Linear) or isinstance(m, nn.Conv1d):
-        torch.nn.init.xavier_uniform_(m.weight)
-        m.bias.data.fill_(0.01)
+        
+def _xavier_init(model):
+    """
+    Performs the Xavier weight initialization.
+    """
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Conv1d)):
+            nn.init.kaiming_normal_(module.weight)
+            if module.bias is not None:
+                fan_in, _ = nn.init._calculate_fan_in_and_fan_out(module.weight)
+                if fan_in != 0:
+                    bound = 1 / math.sqrt(fan_in)
+                    nn.init.uniform_(module.bias, -bound, bound)
 
 
 class Predictor(LightningModule):
@@ -110,7 +119,7 @@ class GameSequencePredictor(LightningModule):
 
     def __init__(self, init_size: int = 256, latent_size: int = 22, extra_size: int = 93, in_channels: int = 5,
                  lr: float = 1e-5, weight_decay: float = 0.0, scheduler_gamma: float = .7,
-                 betas: tuple[float, float] = (.9, .99), *args, **kwargs):
+                 betas: tuple[float, float] = (.9, .99), activation='selu', *args, **kwargs):
         super().__init__()
         self.init_size = init_size
         self.extra_size = extra_size
@@ -123,26 +132,27 @@ class GameSequencePredictor(LightningModule):
         self.betas = betas
         self.encode0 = nn.Sequential(
             nn.Linear(self.init_size, latent_size),
-            nn.SELU(),
+            nn.SELU() if activation == 'selu' else nn.GELU() if activation == 'gelu' else nn.SiLU(),
             nn.Dropout(.4),
             nn.Conv1d(in_channels, 1, 1, 1, 0),
-            nn.SELU(),
+            nn.SELU() if activation == 'selu' else nn.GELU() if activation == 'gelu' else nn.SiLU(),
             nn.Dropout(.4),
         )
 
         self.encode1 = nn.Sequential(
             nn.Linear(extra_size, latent_size),
-            nn.SELU(),
+            nn.SELU() if activation == 'selu' else nn.GELU() if activation == 'gelu' else nn.SiLU(),
             nn.Dropout(.4),
         )
 
         self.classifier = nn.Sequential(
             nn.Linear(latent_size * 4, latent_size),
+            nn.SELU() if activation == 'selu' else nn.GELU() if activation == 'gelu' else nn.SiLU(),
             nn.Linear(latent_size, 1),
             nn.Sigmoid()
         )
 
-        self.classifier.apply(init_weights)
+        _xavier_init(self)
 
         dnn_to_bnn(self.classifier, bnn_prior_parameters={
             "prior_mu": 0.0,
@@ -194,7 +204,7 @@ class GameSequencePredictor(LightningModule):
         # If the selected scheduler is a ReduceLROnPlateau scheduler.
         if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
             sch.step(self.trainer.callback_metrics["val_loss"])
-        else:
+        elif self.lr_schedulers().get_last_lr()[0] >= 1e-15:
             sch.step()
 
     def on_validation_epoch_end(self) -> None:

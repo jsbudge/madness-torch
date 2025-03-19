@@ -11,26 +11,30 @@ from sklearn.svm import SVC
 from tqdm import tqdm
 
 from bracket import generateBracket, applyResultsToBracket, scoreBracket
-from load_data import getMatches, getPossMatches, prepFrame
+from load_data import getMatches, getPossMatches, prepFrame, getSeeds
 from wrappers import SKLearnWrapper
 
 
 def runEstimator(feats, feat_name, df):
-    s0, s1 = getMatches(df, feats)
+    s0 = getMatches(df, feats, diff=True)
     res = [[], []]
     for season in list(set(s0.index.get_level_values(1))):
         Xt0 = s0.loc[s0.index.get_level_values(1) != season]
-        Xt1 = s1.loc[s0.index.get_level_values(1) != season]
         Xs0 = s0.loc[s0.index.get_level_values(1) == season]
-        Xs1 = s1.loc[s0.index.get_level_values(1) == season]
         yt = df.loc[s0.index.get_level_values(1) != season, 'Truth']
 
+        # Augment sampling with weird outliers
+        sd = getSeeds(Xt0, datapath)
+        sd_mask = np.logical_and(sd['t_seed'] > sd['o_seed'], yt).values.astype(bool)
+        Xt0 = pd.concat([Xt0, Xt0.loc[sd_mask]])
+        yt = pd.concat([yt, yt.loc[sd_mask]])
+
         rfc = SKLearnWrapper(RandomForestClassifier(n_estimators=250, criterion='log_loss', max_features=None))
-        rfc.fit(Xt0 - Xt1, yt)
-        df.loc[Xs0.index, f'RFC_{feat_name}'] = rfc(Xs0 - Xs1)
+        rfc.fit(Xt0, yt)
+        df.loc[Xs0.index, f'RFC_{feat_name}'] = rfc(Xs0)
         gpc = SKLearnWrapper(GaussianProcessClassifier(kernel=kernels.RBF(100.)))
-        gpc.fit(Xt0 - Xt1, yt)
-        df.loc[Xs0.index, f'GPC_{feat_name}'] = gpc(Xs0 - Xs1)
+        gpc.fit(Xt0, yt)
+        df.loc[Xs0.index, f'GPC_{feat_name}'] = gpc(Xs0)
         truth_br = generateBracket(season, True, datapath=datapath)
         test = generateBracket(season, True, datapath=datapath)
         ps = getPossMatches(feats, season, diff=True, datapath=datapath)

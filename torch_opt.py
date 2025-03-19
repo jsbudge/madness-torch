@@ -11,17 +11,20 @@ from pytorch_lightning import loggers, Trainer
 from pytorch_lightning.callbacks import EarlyStopping, StochasticWeightAveraging, ModelCheckpoint
 
 from bracket import generateBracket, scoreBracket, applyResultsToBracket
+from load_data import getPossMatches
 from model import GameSequencePredictor
 from dataloader import GameDataModule
+from prep_data import loadFramesForTorch, formatForTorch
 
 
 def objective(trial: optuna.Trial, config=None):
     config['seq_predictor']['latent_size'] = trial.suggest_int('latent_size', 5, 75, 5)
-    config['seq_predictor']['lr'] = trial.suggest_categorical('lr', [1., .01, .0001, .000001, .00000001, .0000000001])
+    config['seq_predictor']['lr'] = trial.suggest_float('lr', 1e-9, 1e-3, log=True)
     config['seq_predictor']['weight_decay'] = trial.suggest_float('weight_decay', 1e-9, .8, log=True)
     config['seq_predictor']['scheduler_gamma'] = trial.suggest_float('scheduler_gamma', .1, .9999)
-    config['seq_predictor']['betas'] = [trial.suggest_float('beta0', .1, .9999), trial.suggest_float('beta1', .1, .9999)]
-
+    config['seq_predictor']['betas'] = [trial.suggest_float('beta0', .7, .9999), trial.suggest_float('beta1', .1, .6)]
+    datapath = config['dataloader']['datapath']
+    adf, avodf = loadFramesForTorch(datapath)
 
     season_total = []
     for season in np.random.choice([2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023, 2024], 5):
@@ -43,36 +46,26 @@ def objective(trial: optuna.Trial, config=None):
         trainer.fit(model, datamodule=data)
         model.eval()
 
-        datapath = config['dataloader']['datapath']
-        dp = f'{datapath}/p{season}'  # Note the p in the path for possible matches
-        if Path(dp).exists():
-            files = glob(f'{dp}/*.pt')
-            if len(files) > 0:
-                ch_d = [torch.load(g) for g in files]
-                t_data = torch.cat([c[0].unsqueeze(0) for c in ch_d], dim=0)
-                o_data = torch.cat([c[1].unsqueeze(0) for c in ch_d], dim=0)
-                tav_data = torch.cat([c[2].unsqueeze(0) for c in ch_d], dim=0)
-                oav_data = torch.cat([c[3].unsqueeze(0) for c in ch_d], dim=0)
-                predictions = 1. - model(t_data, o_data, tav_data, oav_data).detach().numpy()
-
-                file_data = [Path(c).stem for c in files]
-                gid = [int(c.split('_')[0]) for c in file_data]
-                tid = [int(c.split('_')[1]) for c in file_data]
-                oid = [int(c.split('_')[2]) for c in file_data]
-                seas = [season for _ in file_data]
-                small_res = pd.DataFrame(data=np.stack([gid, seas, tid, oid, predictions]).T,
-                                         columns=['gid', 'season', 'tid', 'oid', 'Res'])
-                small_res = small_res.set_index(['gid', 'season', 'tid', 'oid'])
-                truth_br = generateBracket(season, True, datapath=datapath)
-                test = generateBracket(season, True, datapath=datapath)
-                res = 0
-                for r in range(200):
-                    try:
-                        test = applyResultsToBracket(test, small_res, select_random=True, random_limit=.2)
-                        res += scoreBracket(test, truth_br) / 100.
-                    except KeyError:
-                        continue
-                season_total.append(res)
+        extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
+        poss_results = pd.DataFrame(index=extra_df.index, columns=['Res'])
+        for i in range(0, extra_df.shape[0], 128):
+            block = extra_df.iloc[i:i + 128]
+            torch_data = []
+            for idx in block.index:
+                torch_data.append(formatForTorch(adf, extra_df, extra0_df, season, idx, config['seq_predictor']['in_channels'], .5))
+            t_data = torch.cat([c[0].unsqueeze(0) for c in torch_data], dim=0)
+            o_data = torch.cat([c[1].unsqueeze(0) for c in torch_data], dim=0)
+            tav_data = torch.cat([c[2].unsqueeze(0) for c in torch_data], dim=0)
+            oav_data = torch.cat([c[3].unsqueeze(0) for c in torch_data], dim=0)
+            predictions = 1 - model(t_data, o_data, tav_data, oav_data).detach().numpy()
+            poss_results.loc[block.index, 'Res'] = predictions
+        truth_br = generateBracket(season, True, datapath=datapath)
+        test = generateBracket(season, True, datapath=datapath)
+        res = 0
+        for r in range(100):
+            test = applyResultsToBracket(test, poss_results, select_random=True, random_limit=.1)
+            res += scoreBracket(test, truth_br) / 100.
+        season_total.append(res)
     return np.mean(season_total)
 
 
@@ -87,7 +80,7 @@ if __name__ == '__main__':
 
     study = optuna.create_study(direction='maximize',
                                 storage='sqlite:///db.sqlite3',
-                                study_name='madness_3rd')
+                                study_name='madness_5th')
     objective = partial(objective, config=config)
     study.optimize(objective, 1000)
 

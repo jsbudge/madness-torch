@@ -28,6 +28,32 @@ def date_weight(df, dates):
     return df.mul(df_weight, axis=0).groupby(['season', 'tid']).sum().mul(
         1 / df_weight.groupby(['season', 'tid']).sum(), axis=0)
 
+def formatForTorch(adf, extra_df, extra0_df, season, idx, ng_to_av, target=.5):
+    try:
+        t_games = adf.loc(axis=0)[:, season, idx[2]]
+        o_games = adf.loc(axis=0)[:, season, idx[3]]
+    except KeyError:
+        return None
+    if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
+        return None
+    t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+    o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
+    t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
+    o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
+    if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
+        return None
+    return [t_hist, o_hist, t_av, o_av, target]
+
+
+def loadFramesForTorch(datapath, av_type='NormalizedGaussAverages'):
+    adf = pd.read_csv(Path(f'{datapath}/GameDataAdv.csv')).set_index(['gid', 'season', 'tid', 'oid'])
+    adf = adf.drop(columns=['numot'])
+    av_other_df = pd.read_csv(Path(f'{datapath}/{av_type}.csv')).set_index(['season', 'tid'])
+    avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
+    avodf = normalize(avodf)
+    adf = normalize(adf)
+    return adf, avodf
+
 if __name__ == '__main__':
 
     with open('./run_params.yaml', 'r') as file:
@@ -108,10 +134,8 @@ if __name__ == '__main__':
                        f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')'''
 
     # Apply same logic to tournament data
-    av_other_df = pd.read_csv(Path(f'{datapath}/NormalizedGaussAverages.csv')).set_index(['season', 'tid'])
-    avodf = av_other_df[[c for c in av_other_df.columns if c not in adf.columns]]
-    avodf = normalize(avodf)
-    adf = normalize(adf)
+    print('Generating torch files...')
+    adf, avodf = loadFramesForTorch(datapath)
     tdf = pd.read_csv(Path(f'{datapath}/MNCAATourneyCompactResults.csv'))
     tdf = pd.concat((tdf, pd.read_csv(Path(f'{datapath}/WNCAATourneyCompactResults.csv'))),
                     ignore_index=True)
@@ -131,70 +155,6 @@ if __name__ == '__main__':
             print('Missing a season.')
             continue
         for idx, row in tqdm(stdf.iterrows()):
-            try:
-                t_games = adf.loc(axis=0)[:, season, idx[2]]
-                o_games = adf.loc(axis=0)[:, season, idx[3]]
-            except KeyError:
-                continue
-            if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
-                continue
-            t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            te_data = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
-            oe_data = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
-                continue
-            torch.save([t_hist, o_hist, te_data, oe_data, np.float32(row['t_score'] > row['o_score'])],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
-
-    # This is for predicting possible matchups
-    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
-        if season == 2020:
-            continue
-        extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath)
-        season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
-        if not season_path.exists():
-            os.mkdir(season_path)
-        for idx, row in tqdm(extra_df.iterrows()):
-            try:
-                t_games = adf.loc(axis=0)[:, season, idx[2]]
-                o_games = adf.loc(axis=0)[:, season, idx[3]]
-            except KeyError:
-                continue
-            if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
-                continue
-            t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
-            o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
-                continue
-            torch.save([t_hist, o_hist, t_av, o_av, .5],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
-
-    for season in range(adf.index.get_level_values(1).min(), adf.index.get_level_values(1).max() + 1):
-        if season == 2020:
-            continue
-        extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='W')
-        season_path = Path(f'{config["load_data"]["save_path"]}/p{season}')
-        if not season_path.exists():
-            os.mkdir(season_path)
-        for idx, row in tqdm(extra_df.iterrows()):
-            try:
-                t_games = adf.loc(axis=0)[:, season, idx[2]]
-                o_games = adf.loc(axis=0)[:, season, idx[3]]
-            except KeyError:
-                continue
-            if t_games.shape[0] < ng_to_av + 1 or o_games.shape[0] < ng_to_av + 1:
-                continue
-            t_hist = torch.tensor(t_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            o_hist = torch.tensor(o_games.iloc[-ng_to_av:].values, dtype=torch.float32)
-            t_av = torch.tensor(extra_df.loc[idx].values, dtype=torch.float32)
-            o_av = torch.tensor(extra0_df.loc[idx].values, dtype=torch.float32)
-            if torch.any(torch.isnan(t_hist)) or torch.any(torch.isnan(o_hist)):
-                continue
-            torch.save([t_hist, o_hist, t_av, o_av, .5],
-                       f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')
-
-
-
+            torch_data = formatForTorch(adf, extra_df, extra0_df, season, idx, ng_to_av, np.float32(row['t_score'] > row['o_score']))
+            if torch_data is not None:
+                torch.save(torch_data, f'{season_path}/{idx[0]}_{idx[2]}_{idx[3]}.pt')

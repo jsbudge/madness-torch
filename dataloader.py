@@ -31,19 +31,15 @@ class GameDataset(Dataset):
             if Path(dp).exists():
                 self.data.append(glob(f'{dp}/*.pt'))'''
         if season is None:
-            start = 2004 if not is_val else 2021
-            end = 2021 if not is_val else 2025
+            start = 2021 if is_val else 2004
+            end = 2025 if is_val else 2021
             for s in range(start, end):
                 dp = f'{datapath}/t{s}'
                 if Path(dp).exists():
                     self.data.append(glob(f'{dp}/*.pt'))
         else:
             for s in range(2004, 2025):
-                if s == season and is_val:
-                    dp = f'{datapath}/t{s}'
-                    if Path(dp).exists():
-                        self.data.append(glob(f'{dp}/*.pt'))
-                elif s != season and not is_val:
+                if s == season and is_val or s != season and not is_val:
                     dp = f'{datapath}/t{s}'
                     if Path(dp).exists():
                         self.data.append(glob(f'{dp}/*.pt'))

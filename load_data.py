@@ -64,13 +64,7 @@ def normalize(df: DataFrame, transform = None, to_season: bool = False):
     :return: Frame of normalized seasonal data.
     """
     rdf = df.copy()
-    if transform is not None:
-        if to_season:
-            for idx, grp in rdf.groupby(['season']):
-                rdf.loc[grp.index] = transform.fit_transform(grp)
-        else:
-            rdf = pd.DataFrame(index=rdf.index, columns=rdf.columns, data=transform.fit_transform(rdf))
-    else:
+    if transform is None:
         if to_season:
             mu_df = df.groupby(['season']).mean()
             std_df = df.groupby(['season']).std()
@@ -78,6 +72,11 @@ def normalize(df: DataFrame, transform = None, to_season: bool = False):
                 rdf.loc[grp.index] = (grp - mu_df.loc[idx]) / std_df.loc[idx]
         else:
             rdf = (rdf - rdf.mean()) / rdf.std()
+    elif to_season:
+        for idx, grp in rdf.groupby(['season']):
+            rdf.loc[grp.index] = transform.fit_transform(grp)
+    else:
+        rdf = pd.DataFrame(index=rdf.index, columns=rdf.columns, data=transform.fit_transform(rdf))
     return rdf
 
 
@@ -91,10 +90,7 @@ def getMatches(gids: DataFrame, team_feats: DataFrame, season: int = None, diff:
     :param diff: if True, returns differences of features. If False, returns two frames with features.
     :return: Returns either one frame or two, based on diff parameter, of game features.
     """
-    if season is not None:
-        g = gids.loc(axis=0)[:, season, :, :]
-    else:
-        g = gids.copy()
+    g = gids.loc(axis=0)[:, season, :, :] if season is not None else gids.copy()
     ids = ['gid', 'season', 'tid', 'oid']
     gsc = g.reset_index()[ids]
     g1 = gsc.merge(team_feats, on=['season', 'tid']).set_index(ids)
@@ -103,10 +99,7 @@ def getMatches(gids: DataFrame, team_feats: DataFrame, season: int = None, diff:
     if diff:
         return (g1 - g2).sort_index() if sort else (g1 - g2)
     else:
-        if sort:
-            return g1.sort_index(), g2.sort_index()
-        else:
-            return g1, g2
+        return (g1.sort_index(), g2.sort_index()) if sort else (g1, g2)
 
 
 def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None, gender='M'):
@@ -138,17 +131,31 @@ def getPossMatches(team_feats, season, diff=False, use_seed=True, datapath=None,
                    right_on=['season', 'tid'],
                    right_index=True).sort_index()
     g2 = g2.reset_index().set_index(['gid', 'season', 'tid', 'oid'])
-    if diff:
-        return g1 - g2
-    else:
-        return g1, g2
+    return g1 - g2 if diff else (g1, g2)
+
+
+def getSeeds(df, datapath, add=False):
+    sd = pd.read_csv(f'{datapath}/MNCAATourneySeeds.csv').rename(columns={'TeamID': 'tid', 'Season': 'season', 'Seed': 'seed'})
+    sd_o = df.reset_index().merge(sd, left_on=['season', 'oid'], right_on=['season', 'tid'])[
+        ['gid', 'season', 'tid_x', 'oid', 'seed']]
+    sd_o = sd_o.rename(columns={'tid_x': 'tid', 'seed': 'o_seed'})
+    sd_o['t_seed'] = df.reset_index().merge(sd, left_on=['season', 'tid'], right_on=['season', 'tid'])[
+        ['seed']].rename(columns={'seed': 't_seed'})
+    sd_o['o_seed'] = sd_o['o_seed'].apply(lambda x: int(x[1:] if x[-1] not in ['a', 'b'] else x[1:-1]))
+    sd_o['t_seed'] = sd_o['t_seed'].apply(lambda x: int(x[1:] if x[-1] not in ['a', 'b'] else x[1:-1]))
+    if not add:
+        return sd_o.set_index(['gid', 'season', 'tid', 'oid'])
+    df[['t_seed', 'o_seed']] = sd_o.set_index(['gid', 'season', 'tid', 'oid'])
+    return df
+
+
 
 def prepFrame(df: DataFrame, full_frame: bool = True) -> DataFrame:
     df = df.rename(columns={'WLoc': 'gloc'})
     df['gloc'] = df['gloc'].map({'A': -1, 'N': 0, 'H': 1})
 
     # take the frame and convert it into team/opp format
-    iddf = df[[c for c in df.columns if c[0] != 'W' and c[0] != 'L']]
+    iddf = df[[c for c in df.columns if c[0] not in ['W', 'L']]]
     iddf = iddf.rename(columns=dict([(c, c.lower()) for c in iddf.columns]))
     iddf['gid'] = iddf.index.values
     wdf = df[[c for c in df.columns if c[0] == 'W']]

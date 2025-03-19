@@ -31,7 +31,7 @@ def generateBracket(season: int, use_results: bool = True, datapath: str = './da
     seeds = seeds.loc[seeds['Season'] == season]
     slots = pd.read_csv(f'{datapath}/{gender}NCAATourneySlots.csv')
     slots = slots.loc[slots['Season'] == season]
-    seedslots = pd.read_csv(f'{datapath}/{gender}NCAATourneySeedRoundSlots.csv').rename(columns={'GameSlot': 'Slot'})
+    seedslots = pd.read_csv(f'{datapath}/MNCAATourneySeedRoundSlots.csv').rename(columns={'GameSlot': 'Slot'})
     structure = slots.merge(seedslots[['Slot', 'GameRound']], on='Slot')
     structure = structure.loc[np.logical_not(structure.duplicated(['Season', 'Slot'], keep='first'))].sort_values(
         'GameRound')
@@ -155,8 +155,8 @@ class Bracket(object):
             rstr += '\n' + treestr.ljust(4)
         return rstr
 
-    def getBracketString(self, datapath: str = './data'):
-        tnames = loadTeamNames(datapath)
+    def getBracketString(self, datapath: str = './data', gender='M'):
+        tnames = loadTeamNames(datapath, gender=gender)
         rstr = ''
         for pre, fill, node in RenderTree(self.root, style=AsciiStyle()):
             treestr = pre + node.id + ' ' + tnames[node.tid]
@@ -236,7 +236,10 @@ def applyResultsToBracket(br: Bracket, res: pd.DataFrame,
         for gmid in rounds[rnd]:
             gm = br[gmid]
             if gm.has_children:
-                gm_res = res.loc(axis=0)[:, :, gm.children[0].tid, gm.children[1].tid]['Res'].values[0]
+                try:
+                    gm_res = res.loc(axis=0)[:, :, gm.children[0].tid, gm.children[1].tid]['Res'].values[0]
+                except KeyError:
+                    gm_res = 1. - res.loc(axis=0)[:, :, gm.children[1].tid, gm.children[0].tid]['Res'].values[0]
                 flipwin = np.random.rand() < gm_res if (select_random and abs(gm_res - .5) < random_limit) else gm_res > .5
                 gm.tid = gm.children[1].tid if flipwin else gm.children[0].tid
                 gm.slot_win = gm.children[1].slot_win if flipwin else gm.children[0].slot_win
