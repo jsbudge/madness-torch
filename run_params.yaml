@@ -64,13 +64,13 @@ seq_predictor:
   name: GamePredictor
   init_size: 70
   extra_param_size: 93
-  latent_size: 50
+  latent_size: 60
   in_channels: 5
-  lr: .001
-  weight_decay: 0.0000006
-  scheduler_gamma: 0.15
-  betas: [0.9968713995003831, 0.48593684760111644]
-  activation: gelu
+  lr: 0.0005317999680226553
+  weight_decay: 0.0001919027607156888
+  scheduler_gamma: 0.9327290437334796
+  betas: [0.7213970658707348, 0.31948409433884234]
+  activation: selu
   training:
     log_dir: ./logs
     swa_start: .767

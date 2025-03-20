@@ -92,9 +92,9 @@ if __name__ == '__main__':
     print(f'{corrects} correct.')
 
 
-    season = 2023
+    season = 2025
     adf, avodf = loadFramesForTorch(datapath)
-    extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='M')
+    extra_df, extra0_df = getPossMatches(avodf, season=season, datapath=datapath, gender='W')
     poss_results = pd.DataFrame(index=extra_df.index, columns=['Res'])
     for i in tqdm(range(0, extra_df.shape[0], 128)):
         block = extra_df.iloc[i:i + 128]
@@ -107,9 +107,10 @@ if __name__ == '__main__':
         oav_data = torch.cat([c[3].unsqueeze(0) for c in torch_data], dim=0)
         predictions = 1 - model(t_data, o_data, tav_data, oav_data).detach().numpy()
         poss_results.loc[block.index, 'Res'] = predictions
-    truth_br = generateBracket(season, True, datapath=datapath, gender='M')
-    test = generateBracket(season, True, datapath=datapath, gender='M')
+    truth_br = generateBracket(season, True, datapath=datapath, gender='W')
+    test = generateBracket(season, True, datapath=datapath, gender='W')
     res = 0
+    r = 0
     if season < 2025:
         for r in range(100):
             test = applyResultsToBracket(test, poss_results, select_random=True, random_limit=.05)

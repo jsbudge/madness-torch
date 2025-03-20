@@ -23,6 +23,7 @@ def objective(trial: optuna.Trial, config=None):
     config['seq_predictor']['weight_decay'] = trial.suggest_float('weight_decay', 1e-9, .8, log=True)
     config['seq_predictor']['scheduler_gamma'] = trial.suggest_float('scheduler_gamma', .1, .9999)
     config['seq_predictor']['betas'] = [trial.suggest_float('beta0', .7, .9999), trial.suggest_float('beta1', .1, .6)]
+    config['seq_predictor']['activation'] = trial.suggest_categorical('activation', ['gelu', 'selu', 'silu'])
     datapath = config['dataloader']['datapath']
     adf, avodf = loadFramesForTorch(datapath)
 
@@ -80,7 +81,7 @@ if __name__ == '__main__':
 
     study = optuna.create_study(direction='maximize',
                                 storage='sqlite:///db.sqlite3',
-                                study_name='madness_5th')
+                                study_name='madness')
     objective = partial(objective, config=config)
     study.optimize(objective, 1000)
 
