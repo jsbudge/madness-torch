@@ -7,6 +7,7 @@ from sklearn.decomposition import TruncatedSVD, KernelPCA
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier, kernels
 from sklearn.model_selection import train_test_split
+from sklearn.kernel_approximation import RBFSampler
 from sklearn.svm import SVC
 from tqdm import tqdm
 
@@ -61,12 +62,15 @@ if __name__ == '__main__':
     tdata = pd.concat((tdata, pd.read_csv(Path(f'{datapath}/WNCAATourneyCompactResults.csv'))), ignore_index=True)
     tdata = prepFrame(tdata).loc(axis=0)[:, 2010:]
     method_results = pd.DataFrame(index=tdata.index, columns=['Truth'], data=tdata['t_score'] - tdata['o_score'] > 0).astype(np.float32)
+    sampler = RBFSampler(n_components=15)
+
 
     for method in ['Simple', 'Gauss', 'Elo', 'Recent']:
         for prenorm in [True, False]:
             fnme = f'Normalized{method}Averages' if prenorm else f'{method}Averages'
             print(f'Running {fnme}...')
             feats = pd.read_csv(Path(f'{datapath}/{fnme}.csv')).set_index(['season', 'tid'])
+            feats = pd.DataFrame(index=feats.index, data=sampler.fit_transform(feats))
 
             method_results = runEstimator(feats, fnme, method_results)
             method_results.to_csv(Path(f'{datapath}/NCAASklearnResults.csv'))

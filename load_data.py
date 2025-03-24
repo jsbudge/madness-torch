@@ -609,23 +609,7 @@ if __name__ == '__main__':
         adf.to_csv(Path(f'{config["load_data"]["save_path"]}/GameDataAdv.csv'))
         sdf.to_csv(Path(f'{config["load_data"]["save_path"]}/GameDataBasic.csv'))
 
-    # Create a dataframe of the tournament results with average data
-    '''ncaa_fnme = f'{config["load_data"]["data_path"]}/{gender}NCAATourneyCompactResults.csv'
-    ncaa_tdf = pd.read_csv(ncaa_fnme)
-
-    ncaa_tdf = prepFrame(ncaa_tdf)
-
-    # Add in secondary tourney results
-    sec_fnme = f'{config["load_data"]["data_path"]}/{gender}SecondaryTourneyCompactResults.csv'
-    sc_tdf = pd.read_csv(sec_fnme)
-    ncaa_tdf = pd.concat([ncaa_tdf, prepFrame(sc_tdf)])
-    ncaa_tdf['t_win'] = ncaa_tdf['t_score'] - ncaa_tdf['o_score'] > 0
-
-    # merge information with teams
-    print('Generating tournament training data...')
-    avdf_norm = normalize(avdf, to_season=True)
-    # tdf, odf = getMatches(ncaa_tdf, avdf_norm)
-    # results_df = ncaa_tdf.loc[tdf.index, ['t_win']]'''
+    coach_df = pd.read_csv(Path(f'{config["load_data"]["save_path"]}/MTeamCoaches.csv'))
 
     if config['load_data']['save_files']:
         avdf_norm.to_csv(Path(f'{config["load_data"]["save_path"]}/Averages.csv'))
